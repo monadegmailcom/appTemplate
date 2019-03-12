@@ -1,0 +1,79 @@
+name:                appTemplate
+version:             0.1.0.0
+license:             AllRightsReserved
+author:              "Boris Tschochner"
+maintainer:          "tschochner@hornetsecurity.com"
+copyright:           "Hornetsecurity GmbH"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+description:         See README.md
+
+dependencies:
+- async >= 2.2.1 && < 2.3
+- base >= 4.7 && < 5
+- bytestring >= 0.10.8.2 && < 0.10.9
+- case-insensitive
+- configurator >= 0.3.0.0 && < 0.3.1
+- fast-logger >= 2.4.13 && < 2.5
+- mtl
+- optparse-applicative >= 0.14.3.0 && < 1.14.4
+- safe-exceptions
+- silently
+- text >= 1.2.3.1 && < 1.2.4
+- unix >= 2.7.2.2 && < 2.7.3
+
+ghc-options:
+- -Wall
+- -Wcompat
+- -Wincomplete-record-updates
+- -Wincomplete-uni-patterns
+- -Wredundant-constraints
+
+default-extensions:
+- ConstraintKinds
+- FlexibleContexts
+- LambdaCase
+- OverloadedStrings
+- ScopedTypeVariables
+- TupleSections
+- TypeApplications
+
+library:
+  source-dirs: src
+
+executables:
+  appTemplate:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    # do not run parallel garbage collection
+    - -with-rtsopts=-qg
+    dependencies:
+    - appTemplate
+
+tests:
+  appTemplate-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - hspec >= 1.8
+    - appTemplate
+  hlint:
+    main:                Hlint.hs
+    source-dirs:         test/hlint
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - hlint >= 1
