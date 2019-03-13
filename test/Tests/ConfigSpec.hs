@@ -1,10 +1,8 @@
 module Tests.ConfigSpec (spec) where
 
-import Config (Config(..))
+import           Config (Config(..))
 import qualified Config
-
 import qualified Log
-
 import qualified System.Environment
 
 import Test.Hspec

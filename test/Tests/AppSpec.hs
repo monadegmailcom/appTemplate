@@ -1,74 +1,64 @@
 module Tests.AppSpec (spec) where
 
-import App (run)
-
+import           App (run)
 import qualified Config
-
 import qualified Control.Concurrent as C
 import qualified Control.Concurrent.Async as CA
-import Control.Monad (void)
-import Control.Monad.Reader (runReaderT)
-
+import           Control.Monad (void)
+import           Control.Monad.Reader (runReaderT)
 import qualified Data.ByteString.Char8 as BS
-
+import           Environment (Environment(..))
 import qualified Log
-
 import qualified Mock.Environment
-
-import qualified Settings
-import Settings (Settings(..))
-
+import           Settings (Settings(..))
 import qualified System.Environment
 import qualified System.Posix.Signals as PS
 import qualified System.Log.FastLogger as FL
-
-import Test.Hspec
+import           Test.Hspec
 
 spec :: Spec
 spec = context "App" $
-    context "with valid settings" $ before (createSettings "valid.cfg") $
+    context "with valid config" $ before (createEnvironment "valid.cfg") $
         context "with application started" $ beforeWith startApplication $ do
+            context "with INT signal sent" $ beforeWith raiseSigInt $
+                context "with application done" $ beforeWith waitForApplicationDone $
+                    it "shutted down with goodbye message" $ \logEntries -> do
+                        let ls = if length logEntries < 2
+                                     then error "invalid log entries"
+                                     else take 2 logEntries
+                        head ls `shouldBe` (Log.Info, "Shutdown complete")
+                        last ls `shouldBe` (Log.Info, "Caught signal 2, shutting down...")
             context "with shutdown requested" $ beforeWith requestShutdown $
-                it "starts with hello message" $ \logEntries -> do
-                    let firstLogEntry = last logEntries
-                    (toString . snd) firstLogEntry `shouldStartWith` "Startup version "
-                    fst firstLogEntry `shouldBe` Log.Info
-            context "with INT signal sent" $ beforeWith terminateApplication $
-                it "shuts down with goodbye message" $ \logEntries -> do
-                    let (e1, e2) = case logEntries of
-                            (i1:i2:_) -> (i1, i2)
-                            _ -> error "invalid log entries"
-                    e1 `shouldBe` (Log.Info, "Shutdown complete")
-                    e2 `shouldBe` (Log.Info, "Caught signal 2, shutting down...")
+                context "with application done" $ beforeWith waitForApplicationDone $
+                    it "started with hello message" $ \logEntries -> do
+                        let firstLogEntry = last logEntries
+                        (toString . snd) firstLogEntry `shouldStartWith` "Startup version "
+                        fst firstLogEntry `shouldBe` Log.Info
   where
-    requestShutdown (settings, logSink, _) = do
-        C.putMVar (settingsBusy settings) ()
-        C.putMVar (settingsShutdown settings) ()
-        C.readMVar logSink
-    terminateApplication (_, logSink, appAsync) = do
-        -- raise signal INT to let signal handler terminate application thread
-        PS.raiseSignal PS.sigINT
-
+    waitForApplicationDone (_, logSink, appAsync) = do
         -- wait for application to finish
         void $ CA.wait appAsync
 
+        -- return log entries
         C.readMVar logSink
-    startApplication (settings, logSink) = do
+    requestShutdown arg@(env, _, _) = do
+        C.putMVar (settingsShutdown . envSettings $ env) ()
+        return arg
+    raiseSigInt arg = PS.raiseSignal PS.sigINT >> return arg
+    startApplication (env, logSink) = do
         -- start application asynchronously
-        appAsync <- CA.async $ runReaderT App.run settings
+        appAsync <- CA.async $ runReaderT App.run env
 
         -- wait until application initialization is finished
-        C.readMVar $ settingsBusy settings
+        C.readMVar . settingsBusy . envSettings $ env
 
-        return (settings, logSink, appAsync)
-    createSettings configFile = do
-        putStrLn "createSettings"
+        return (env, logSink, appAsync)
+    createEnvironment configFile = do
         logSink <- C.newMVar []
-        settings <- System.Environment.withArgs ["-c", fixturesDir <> configFile]
+        env <- System.Environment.withArgs ["-c", fixturesDir <> configFile]
               $ Config.parseCommandLineOptions
             >>= Config.parseConfigFile . Config.cmdLineConfigFile
             >>= Mock.Environment.create logSink
-            >>= Settings.create
-        return (settings, logSink)
+        return (env, logSink)
     fixturesDir = "test/fixtures/"
     toString = BS.unpack . FL.fromLogStr

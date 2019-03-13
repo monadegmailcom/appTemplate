@@ -1,10 +1,8 @@
 module Tests.LogSpec (spec) where
 
 import qualified Log
-
 import qualified System.IO.Silently as Silently
-
-import Test.Hspec 
+import           Test.Hspec 
 
 spec :: Spec
 spec = context "Log" $

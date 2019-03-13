@@ -1,42 +1,42 @@
-{- | Log functionalities relying on fast-logger package. As in multithreaded programs each thread has
+{- | Log functionalities, relying on fast-logger package. As in multithreaded programs each thread has
      its own buffer, the order of output will not be the order of occurrance, because each thread's log
-     buffer flushes when its full. This results in surprising behaviour. So we set the buffer size to
-     1, flushing on each log call.
+     buffer flushes when its full. The result is somewhat surprising. So we set the buffer size to
+     1, flushing after each log call.
 -}
 module Log
-    ( Function
+    ( Constraint
+    , Function
     , HasLog(..)
     , Level(..)
     , Log.debug
     , Log.error
     , Log.info
-    , Log.warning
     , Log.levels
+    , Log.warning
     , makeLogFunction
     , makeLoggerSet
     ) where
 
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (MonadReader, asks)
-
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Reader (MonadReader, asks)
 import qualified Data.List as L
-import Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe)
 import qualified Data.Text as T
-
 import qualified System.Log.FastLogger as FL
 
 {- | Make logger set without buffering (1 byte buffer). This logger set may be used to build a log
-     function or to be passed to wai logging. -}
+     function or to be passed to wai logging.
+-}
 makeLoggerSet :: Maybe FilePath -> IO FL.LoggerSet
 makeLoggerSet filePath = case filePath of
     -- construct logger sets without buffering (1 byte buffer)
-    Nothing   -> FL.newStdoutLoggerSet 1
+    Nothing -> FL.newStdoutLoggerSet 1
     Just path -> FL.newFileLoggerSet 1 path
 
--- | Ordered log level.
+-- | Ordered log levels.
 data Level = Debug | Info | Warning | Error deriving (Eq, Ord, Show)
 
--- | Available log levels.
+-- | Available log levels with serialization.
 levels :: [(Level, T.Text)]
 levels =
     [ (Debug, "Debug")
@@ -45,7 +45,7 @@ levels =
     , (Error, "Error")
     ]
 
--- display log level without Show instance because we want to avoid prelude String
+-- display log level without Show instance because we want to avoid Prelude String
 -- error only happens if code is inconsistent
 display :: Level -> T.Text
 display = fromMaybe (Prelude.error "log level not found") . flip L.lookup levels
@@ -58,17 +58,21 @@ makeLogFunction :: Log.Level -> FL.LoggerSet -> IO Log.Function
 makeLogFunction minLogLevel loggerSet = do
     -- use time cache because getting and formatting time is expensive
     timeCache <- FL.newTimeCache FL.simpleTimeFormat
-    return $ loggerFunction timeCache
+    return $ getLoggerFunction timeCache
   where
-    loggerFunction timeCache logLevel str
-        | logLevel < minLogLevel = return () -- skip logging if minimum log level not reached
+    getLoggerFunction timeCache logLevel str
+        -- skip logging if minimum log level not reached
+        | logLevel < minLogLevel = return ()         
         | otherwise = do
-              formattedTime <- FL.toLogStr <$> timeCache
-              -- annotate like this: [INFO] [Time] str
-              let str' = foldl annotateWith str [formattedTime, FL.toLogStr . display $ logLevel]
+              -- get formatted time from cache
+              timeStr <- FL.toLogStr <$> timeCache
+              -- annotate string like this: [INFO] [Time] str
+              let str' = foldl annotateWith str [timeStr, levelStr]
+                  levelStr = FL.toLogStr . display $ logLevel
               FL.pushLogStrLn loggerSet str'
     annotateWith str annotation = "[" <> annotation <> "] " <> str
 
+-- | Logging constraint.
 type Constraint s env m = (FL.ToLogStr s, MonadIO m, MonadReader env m, HasLog env)
 
 -- | Typeclass for logging functionality.

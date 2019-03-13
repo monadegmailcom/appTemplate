@@ -1,0 +1,17 @@
+stages:
+    - test
+    - deploy
+
+variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    DOCKER_IMAGE: gitlab-registry.hornetsecurity.com/pdc/encrypted-mailbox/haskell/embox-haskell-docker:lts-13.8
+    TARGET: /RULES/software/office365/mail-reminder
+    SERVICES_MAIL_REMINDER: mail-reminder mail-reminder-backend
+lts-test:
+    stage: test
+    image: $DOCKER_IMAGE
+    services:
+    - redis
+    script:
+    - stack test --fast
+
