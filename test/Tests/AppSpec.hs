@@ -50,7 +50,8 @@ spec = context "App" $
         appAsync <- CA.async $ runReaderT App.run env
 
         -- wait until application initialization is finished
-        C.readMVar . settingsBusy . envSettings $ env
+        let busyFlag = settingsBusy . envSettings $ env
+        void $ C.putMVar busyFlag () >> C.tryTakeMVar busyFlag
 
         return (env, logSink, appAsync)
     createEnvironment configFile = do
