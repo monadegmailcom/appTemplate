@@ -10,7 +10,6 @@ import qualified Data.ByteString.Char8 as BS
 import           Environment (Environment(..))
 import qualified Log
 import qualified Mock.Environment
-import           Settings (Settings(..))
 import qualified System.Environment
 import qualified System.Posix.Signals as PS
 import qualified System.Log.FastLogger as FL
@@ -23,11 +22,9 @@ spec = context "App" $
             context "with INT signal sent" $ beforeWith raiseSigInt $
                 context "with application done" $ beforeWith waitForApplicationDone $
                     it "shutted down with goodbye message" $ \logEntries -> do
-                        let ls = if length logEntries < 2
-                                     then error "invalid log entries"
-                                     else take 2 logEntries
-                        head ls `shouldBe` (Log.Info, "Shutdown complete")
-                        last ls `shouldBe` (Log.Info, "Caught signal 2, shutting down...")
+                        logEntries `shouldSatisfy` 
+                            ((Log.Info, "Caught signal 2, shutting down...") `elem`)
+                        head logEntries `shouldBe` (Log.Info, "Shutdown complete")
             context "with shutdown requested" $ beforeWith requestShutdown $
                 context "with application done" $ beforeWith waitForApplicationDone $
                     it "started with hello message" $ \logEntries -> do
@@ -42,7 +39,7 @@ spec = context "App" $
         -- return log entries
         C.readMVar logSink
     requestShutdown arg@(env, _, _) = do
-        C.putMVar (settingsShutdown . envSettings $ env) ()
+        C.putMVar (envShutdown env) ()
         return arg
     raiseSigInt arg = PS.raiseSignal PS.sigINT >> return arg
     startApplication (env, logSink) = do
@@ -50,7 +47,7 @@ spec = context "App" $
         appAsync <- CA.async $ runReaderT App.run env
 
         -- wait until application initialization is finished
-        let busyFlag = settingsBusy . envSettings $ env
+        let busyFlag = envBusy env
         void $ C.putMVar busyFlag () >> C.tryTakeMVar busyFlag
 
         return (env, logSink, appAsync)

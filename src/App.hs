@@ -6,7 +6,7 @@ module App
     ) where
 
 import qualified Control.Concurrent as C
-import           Control.Concurrent.Async (async)
+import qualified Control.Concurrent.Async as CA
 import           Control.Exception.Safe (MonadMask, bracket_, finally)
 import           Control.Monad (void, unless)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
@@ -16,14 +16,13 @@ import qualified Data.Version as Version
 import           Environment (Environment(..))
 import qualified Log
 import qualified Paths_appTemplate as Paths
-import           Settings (Settings(..))
 import qualified Signals
 import qualified System.Posix.Signals as PS
 
 {- | Run application, it blocks until it stops processing by sending a STOP signal or setting
-     the shutdown variable in 'Settings'.
+     the shutdown variable in 'Environment'.
      The 'Environment' provided in a reader monad gives access to external services like logging
-     and application state in 'Settings'.
+     and application state.
      Initialize by setting signal handlers and say hello in log.
      When finished initializing, set busy state to idle, even in the case of exception thrown at
      startup.
@@ -34,62 +33,55 @@ run = flip finally setIdle $ do
     -- log hello message
     Log.info $ "Startup version " <> Version.showVersion Paths.version
 
-    -- get environment
-    env <- ask
-
     -- install signal handlers
-    mapM_ (Signals.installHandler (getSignalHandler env)) Signals.terminateSignals
+    mapM_ installHandler Signals.terminateSignals
 
     -- set to idle when initialization is done
     setIdle
 
-    -- optionally we may start some asynchronous event processing
-    void . liftIO . async $ runReaderT poll env
+    -- optionally we may start some asynchronous event processing. The poll function
+    -- terminates when a shutdown is requested, wait for this to happen. Note: when we
+    -- omit this optional line, the blocking read call to `envShutdown` in the 
+    -- following line is important.
+    ask >>= liftIO . CA.async . runReaderT poll >>= liftIO . CA.wait
 
     -- block until shutdown is requested, e.g. by signal handler
-    liftIO . C.readMVar . settingsShutdown $ envSettings env
+    asks envShutdown >>= liftIO . C.readMVar
 
     -- log goodbye message
     Log.info ("Shutdown complete" :: T.Text)
   where
-    getSignalHandler env = flip runReaderT env . signalHandler
-    setIdle = unsetFlag settingsBusy
+    installHandler signal = do
+        env <- ask
+        Signals.installHandler (getSignalHandler signal env) signal
+    getSignalHandler = runReaderT . signalHandler
+    setIdle = asks envBusy >>= void . liftIO . C.tryTakeMVar
 
-signalHandler :: (MonadIO m, MonadReader Environment m) => PS.SignalInfo -> m ()
-signalHandler signalInfo = do
-    Log.info $ "Caught signal "
-            <> (T.pack . show . PS.siginfoSignal) signalInfo
-            <> ", shutting down..."
+-- only one IO action can run at a time when processed with `synchronize`
+synchronize :: (MonadMask m, MonadIO m, MonadReader Environment m) => m a -> m a
+synchronize = bracket_ claim release
+  where
+    claim = asks envBusy >>= liftIO . flip C.putMVar ()
+    release = asks envBusy >>= liftIO . C.takeMVar
+
+-- report the signal and initiate shutdown
+signalHandler :: (MonadMask m, MonadIO m, MonadReader Environment m) => PS.Signal -> m ()
+signalHandler signal = do
+    Log.info $ "Caught signal " <> (T.pack . show $ signal) <> ", shutting down..."
 
     -- block if application is busy already, so we do not interrupt
-    -- the application while doing important business.
-    setFlag settingsBusy
-
-    -- signal shutdown state
-    setFlag settingsShutdown
-
-    -- set to idle state
-    unsetFlag settingsBusy
-
--- blocks if flag is already set
-setFlag :: (MonadIO m, MonadReader Environment m) => (Settings -> C.MVar ()) -> m ()
-setFlag flag = asks (flag . envSettings) >>= liftIO . flip C.putMVar ()
-
--- does not block
-unsetFlag :: (MonadIO m, MonadReader Environment m) => (Settings -> C.MVar ()) -> m ()
-unsetFlag flag = asks (flag . envSettings) >>= void . liftIO . C.tryTakeMVar
+    -- the application while doing important business
+    asks envShutdown >>= synchronize . liftIO . flip C.putMVar ()
 
 -- example async processing
 poll :: (MonadIO m, MonadMask m, MonadReader Environment m) => m ()
 poll = loopUnless isShuttingDown $ do
-    bracket_
-        (setFlag settingsBusy)
-        (unsetFlag settingsBusy)
-        (Log.info ("poll" :: String) >> (liftIO . C.threadDelay) 100000)
+    synchronize $ Log.info ("poll" :: String) >> waitSome
 
     -- wait some time for signal handler to run
-    liftIO . C.threadDelay $ 100000
+    waitSome
   where
+    waitSome = liftIO . C.threadDelay $ 100000 -- 1/10 sec
     loopUnless predicate action = predicate >>= flip unless (action >> loopUnless predicate action)
-    isShuttingDown = asks (settingsShutdown . envSettings) >>= liftIO . fmap not . C.isEmptyMVar
+    isShuttingDown = asks envShutdown >>= liftIO . fmap not . C.isEmptyMVar
 
