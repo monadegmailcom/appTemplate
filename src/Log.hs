@@ -73,30 +73,30 @@ makeLogFunction minLogLevel loggerSet = do
     annotateWith str annotation = "[" <> annotation <> "] " <> str
 
 -- | Logging constraint.
-type Constraint s env m = (FL.ToLogStr s, MonadIO m, MonadReader env m, HasLog env)
+type Constraint env m = (MonadIO m, MonadReader env m, HasLog env)
 
 -- | Typeclass for logging functionality.
 class HasLog a where
     getLogFunction :: a -> Log.Function
 
 -- helper function for debug, info, warning and error
-genericLog :: Constraint s env m => Log.Level -> s -> m ()
+genericLog :: Constraint env m => Log.Level -> T.Text -> m ()
 genericLog minLogLevel str = do
     logFunction <- asks getLogFunction
     liftIO . logFunction minLogLevel . FL.toLogStr $ str
 
 -- | Log with log level Debug.
-debug :: Constraint s env m => s -> m ()
+debug :: Constraint env m => T.Text -> m ()
 debug = genericLog Debug
 
 -- | Log with log level Info.
-info :: Constraint s env m => s -> m ()
+info :: Constraint env m => T.Text -> m ()
 info = genericLog Info
 
 -- | Log with log level Warning.
-warning :: Constraint s env m => s -> m ()
+warning :: Constraint env m => T.Text -> m ()
 warning = genericLog Warning
 
 -- | Log with log level Error.
-error :: Constraint s env m => s -> m ()
+error :: Constraint env m => T.Text -> m ()
 error = genericLog Error

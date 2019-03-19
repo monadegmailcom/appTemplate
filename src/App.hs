@@ -30,19 +30,20 @@ import qualified System.Posix.Signals as PS
 run :: (MonadIO m, MonadReader Environment m) => m ()
 run = do
     -- log hello message
-    Log.info $ "Startup version " <> Version.showVersion Paths.version
+    Log.info $ "Startup version " <> (T.pack . Version.showVersion) Paths.version
 
     -- optionally we may start some asynchronous event processing. The poll function
-    -- terminates when a shutdown is requested, wait for this to happen. Note: when we
-    -- omit this optional line, the blocking read call to `envShutdown` in the
-    -- following line is important.
-    ask >>= liftIO . CA.async . runReaderT (poll "A") >>= liftIO . CA.wait
+    -- terminates when a shutdown is requested, wait for this to happen.
+    env <- ask
+    mapM_ (liftIO . CA.async) [poll' "A" env, poll' "B" env]
 
     -- block until shutdown is requested (e.g. by signal handler) and no transactions are pending
     GracefulShutdown.waitFor
 
     -- log goodbye message
-    Log.info ("Shutdown complete" :: T.Text)
+    Log.info "Shutdown complete"
+  where
+    poll' = runReaderT . poll
 
 -- | Install signal handlers.
 installSignalHandlers :: (MonadIO m, MonadReader Environment m) => m ()
@@ -59,14 +60,16 @@ signalHandler signal = do
     Log.info $ "Caught signal " <> (T.pack . show $ signal) <> ", shutting down..."
     GracefulShutdown.request
 
--- example async processing
+-- example async processing, return when shutdown is requested
 poll :: (MonadIO m, MonadMask m, MonadReader Environment m) => T.Text -> m ()
 poll msg = loopUnless GracefulShutdown.isScheduled $ do
-    GracefulShutdown.suspendWhile $ Log.info ("poll " <> msg) >> waitSome
+    GracefulShutdown.guard
+        $ Log.info ("poll " <> msg) >> waitSome >> Log.info (msg <> " ..done")
 
     -- wait some time for signal handler to run
     waitSome
   where
     waitSome = liftIO . threadDelay $ 100000 -- 1/10 sec
-    loopUnless predicate action = predicate >>= flip unless (action >> loopUnless predicate action)
+    loopUnless exitCondition action =
+        exitCondition >>= flip unless (action >> loopUnless exitCondition action)
 
