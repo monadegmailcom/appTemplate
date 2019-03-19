@@ -6,26 +6,31 @@ module Environment
     , create
     ) where
 
-import qualified Control.Concurrent as C
+import qualified Control.Concurrent.STM as C
 import           Config (Config(..))
 import           Control.Exception.Safe (handleAny)
 import qualified Config
+import           Data.Unique (Unique)
+import qualified GracefulShutdown
 import qualified Log
 
 -- | Global application environment
---   Includes a "busy" variable, if set, the application should not be interrupted, if empty
---   it indicates an interruptable "idle" state. Likewise a set "shutdown" variable may prevent
---   the application to start new tasks.
---   It is used by the signal handlers to process a gracefull shutdown.
+--   Includes a "transactions" container, with transactions not be interrupted by shutdown.
+--   A "shutdown" flag is used by the signal handlers to process a gracefull shutdown.
 data Environment = Environment
     { envConfig :: !Config
     , envLogFunction :: !Log.Function
-    , envBusy :: !(C.MVar ()) -- ^ indicate application's busy state
-    , envShutdown :: !(C.MVar ()) -- ^ indicate application's shutdown state
+    , envTransactions :: !(C.TVar [Unique])
+          -- ^ application's transaction not to be interrupted
+    , envShutdown :: !(C.TVar Bool) -- ^ indicate application's shutdown state
     }
 
 instance Log.HasLog Environment where
     getLogFunction = envLogFunction
+
+instance GracefulShutdown.HasGracefulShutdown Environment where
+    getShutdown = envShutdown
+    getTransactions = envTransactions
 
 -- | Create environment with application's 'Settings', all external services are bound to "real" ones.
 create :: IO Environment
@@ -33,11 +38,11 @@ create = do
     config@(Config (Config.Log mPath logLevel)) <-
             Config.parseCommandLineOptions
         >>= handleAny onConfigParsingError . Config.parseConfigFile . Config.cmdLineConfigFile
-    busyFlag <- C.newMVar ()
-    shutdownFlag <- C.newEmptyMVar
+    (transactions, shutdownFlag) <- GracefulShutdown.createSyncPrimitives
+     
     logFunction <-
             Log.makeLoggerSet mPath
         >>= Log.makeLogFunction logLevel
-    return $ Environment config logFunction busyFlag shutdownFlag
+    return $ Environment config logFunction transactions shutdownFlag
   where
     onConfigParsingError = fail . ("Error parsing config file: " <>) . show

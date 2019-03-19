@@ -1,13 +1,13 @@
 module Tests.AppSpec (spec) where
 
-import           App (run)
+import qualified App
 import qualified Config
 import qualified Control.Concurrent as C
 import qualified Control.Concurrent.Async as CA
 import           Control.Monad (void)
 import           Control.Monad.Reader (runReaderT)
 import qualified Data.ByteString.Char8 as BS
-import           Environment (Environment(..))
+import qualified GracefulShutdown
 import qualified Log
 import qualified Mock.Environment
 import qualified System.Environment
@@ -39,16 +39,14 @@ spec = context "App" $
         -- return log entries
         C.readMVar logSink
     requestShutdown arg@(env, _, _) = do
-        C.putMVar (envShutdown env) ()
+        runReaderT GracefulShutdown.request env
         return arg
     raiseSigInt arg = PS.raiseSignal PS.sigINT >> return arg
     startApplication (env, logSink) = do
+        runReaderT App.installSignalHandlers env
+
         -- start application asynchronously
         appAsync <- CA.async $ runReaderT App.run env
-
-        -- wait until application initialization is finished
-        let busyFlag = envBusy env
-        void $ C.putMVar busyFlag () >> C.tryTakeMVar busyFlag
 
         return (env, logSink, appAsync)
     createEnvironment configFile = do
