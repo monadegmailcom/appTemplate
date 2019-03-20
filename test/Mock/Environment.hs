@@ -12,9 +12,7 @@ import qualified System.Log.FastLogger as FL
 
 -- | Mocked application environment.
 create :: C.MVar [(Log.Level, FL.LogStr)] -> Config -> IO Environment
-create logSink config = do
-    (transactions, shutdownFlag) <- GracefulShutdown.createSyncPrimitives
-    return $ Environment config logFunction transactions shutdownFlag
+create logSink config = Environment config logFunction <$> GracefulShutdown.createGuard
   where
     logFunction level str = C.modifyMVar_ logSink (return . ((level, str) :))
 

@@ -9,7 +9,7 @@ module App
 import           Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as CA
 import           Control.Exception.Safe (MonadMask)
-import           Control.Monad (unless)
+import           Control.Monad (unless, void)
 import           Control.Monad.IO.Class (liftIO, MonadIO)
 import           Control.Monad.Reader (MonadReader, ask, runReaderT)
 import qualified Data.Text as T
@@ -21,11 +21,11 @@ import qualified Paths_appTemplate as Paths
 import qualified Signals
 import qualified System.Posix.Signals as PS
 
-{- | Run application, it blocks until it stops processing by sending a STOP signal or setting
-     the shutdown variable in 'Environment'.
-     The 'Environment' provided in a reader monad gives access to external services like logging
+{- | Run application, it blocks until it stops processing when receiving a STOP signal or requesting
+     the shutdown by the 'Guard' in 'Environment'.
+     The 'Environment' provides in a reader monad access to external services like logging
      and application state.
-     For example usage, see "app/Main.hs" or "test/AppSpec.hs"
+     For example usage, see "Main.hs" or "AppSpec.hs"
 -}
 run :: (MonadIO m, MonadReader Environment m) => m ()
 run = do
@@ -38,7 +38,7 @@ run = do
     mapM_ (liftIO . CA.async) [poll' "A" env, poll' "B" env]
 
     -- block until shutdown is requested (e.g. by signal handler) and no transactions are pending
-    GracefulShutdown.waitFor
+    GracefulShutdown.wait
 
     -- log goodbye message
     Log.info "Shutdown complete"
@@ -63,7 +63,7 @@ signalHandler signal = do
 -- example async processing, return when shutdown is requested
 poll :: (MonadIO m, MonadMask m, MonadReader Environment m) => T.Text -> m ()
 poll msg = loopUnless GracefulShutdown.isScheduled $ do
-    GracefulShutdown.guard
+    void . GracefulShutdown.guard
         $ Log.info ("poll " <> msg) >> waitSome >> Log.info (msg <> " ..done")
 
     -- wait some time for signal handler to run

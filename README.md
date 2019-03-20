@@ -21,4 +21,4 @@ seems to be a bit "too much".
 ## Module dependency graphs
 
 - Source dependencies ![](src.png)
-- Test code dependencies ![](test.png)
+- Test code dependencies (prunded edges) ![](test.png)
