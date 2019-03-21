@@ -1,5 +1,12 @@
-{- | Contains the entry point of the application. It is located in the library to be accessible by
-     the test target.
+{- | Contains the entry point of the application. Address following requirements:
+
+     - 'installSignalHandlers' to allow a graceful shutdown.
+     - 'run' the application in an 'Environment' providing
+         - external service like logging and database access
+         - a 'guard' for graceful shutdown
+     - 'run' is accessible both from application and test framework for unit testing.
+     - 'run' starts any necessary event processing functions and blocks until shutdown
+       requested by the 'Guard'
 -}
 module App
     ( installSignalHandlers
@@ -21,8 +28,8 @@ import qualified Paths_appTemplate as Paths
 import qualified Signals
 import qualified System.Posix.Signals as PS
 
-{- | Run application, it blocks until it stops processing when receiving a STOP signal or requesting
-     the shutdown by the 'Guard' in 'Environment'.
+{- | Run application, it blocks until it stops processing when receiving a terminate signal
+     or requesting the shutdown by the 'Guard'.
      The 'Environment' provides in a reader monad access to external services like logging
      and application state.
      For example usage, see "Main.hs" or "AppSpec.hs"
@@ -33,7 +40,7 @@ run = do
     Log.info $ "Startup version " <> (T.pack . Version.showVersion) Paths.version
 
     -- optionally we may start some asynchronous event processing. The poll function
-    -- terminates when a shutdown is requested, wait for this to happen.
+    -- terminates when a shutdown is requested
     env <- ask
     mapM_ (liftIO . CA.async) [poll' "A" env, poll' "B" env]
 

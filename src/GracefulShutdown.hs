@@ -1,4 +1,12 @@
-{- | Implement graceful shutdown. Some IO actions should not be interrupted by shutdown. -}
+{- | Implement graceful shutdown. Address following requirements:
+
+     - 'request' a shutdown at any time. This 'request' may be triggered by receiving an interceptable
+       termination signals (e.g. send by systemctl) or other events.
+     - Atomicity: you can 'guard' a IO action, so it cannot be interrupted by a request to shutdown,
+       the shutdown is delayed until all 'guard'ed IO actions have finished.
+     - Do not start new IO actions when a shutdown 'isScheduled'.
+     - For a graceful shutdown you 'wait' until all guarded IO actions have finished.
+-}
 module GracefulShutdown
     ( Constraint
     , HasGracefulShutdown(..)
@@ -25,15 +33,11 @@ class HasGracefulShutdown a where
      - do not interrupt action by shutdown
      - do not execute new actions when shutdown is requested
      - do not shutdown until all pending actions have finished
-
-     Implementation details
-
-     - contains a Either Int Int
-     - both Ints count the pending actions
-     - a Left indicates a requested shutdown
-     - a Right indicates no shutdown requested
 -}
-newtype Guard = Guard { getEither :: Either Int Int } deriving Eq
+data Guard = Guard
+    { getShutdownFlag :: !Bool -- ^ Shutdown requested.
+    , getPendingCount :: !Int -- ^ Count pending actions.
+    } deriving Eq
 
 -- | Constraint for shutdown functions.
 type Constraint env m = (MonadIO m, MonadReader env m, HasGracefulShutdown env)
@@ -49,49 +53,37 @@ guard action = do
     guardTVar <- asks getGuard
     bracket
         (atomically . register $ guardTVar)
-        (\registered -> when registered (atomically . unregister $ guardTVar))
-        (\registered -> if registered then Just <$> action
-                                      else return Nothing)
+        (\allowed -> when allowed (atomically . unregister $ guardTVar))
+        (\allowed -> if allowed then Just <$> action else return Nothing)
   where
     -- register action, reject if shutdown requested
-    register guardTVar = getEither <$> STM.readTVar guardTVar >>= \case
-       Left _ -> return False
-       Right count -> do
-          STM.writeTVar guardTVar (Guard (Right (count + 1)))
-          return True
-    unregister guardTVar = STM.modifyTVar' guardTVar (Guard . dec . getEither)
-    dec = \case
-        Left count -> Left (count - 1)
-        Right count -> Right (count - 1)
+    register guardTVar = do
+       allowed <- not . getShutdownFlag <$> STM.readTVar guardTVar
+       when allowed $ STM.modifyTVar guardTVar (incrPendingCount 1)
+       return allowed
+    unregister = flip STM.modifyTVar' $ incrPendingCount (-1)
+    incrPendingCount inc g = g { getPendingCount = inc + getPendingCount g }
 
 -- | Request shutdown.
 request :: Constraint env m => m ()
 request = do
     guardTVar <- asks getGuard
-    atomically $ STM.modifyTVar guardTVar (Guard . modify . getEither)
-  where
-    modify = \case
-        -- switch from pending count from Left to Right
-        Right count -> Left count
-        x -> x
+    atomically . STM.modifyTVar guardTVar $ (\g -> g { getShutdownFlag = True })
 
--- | Wait for shutdown completion, shutdown requested and all pending transactions finished.
+-- | Wait for shutdown completion, return if shutdown requested and all pending transactions
+--   finished.
 wait :: Constraint env m => m ()
 wait = do
     guardTVar <- asks getGuard
-    atomically $ STM.readTVar guardTVar >>= STM.check . (== Guard (Left 0))
+    atomically $ STM.readTVar guardTVar >>= STM.check . (== Guard True 0)
 
 -- | Shutdown requested?
 isScheduled :: Constraint env m => m Bool
 isScheduled = do
     guardTVar <- asks getGuard
-    atomically $ isLeft . getEither <$> STM.readTVar guardTVar
-  where
-    isLeft = \case
-        Left _ -> True
-        Right _ -> False
+    atomically $ getShutdownFlag <$> STM.readTVar guardTVar
 
 -- | Create synchronization primitive.
 createGuard :: IO (STM.TVar Guard)
-createGuard = STM.atomically $ STM.newTVar (Guard (Right 0))
+createGuard = STM.atomically $ STM.newTVar (Guard False 0)
 

@@ -1,5 +1,11 @@
-{- | The `Environment` contains the application's state and mockable services as
-     logging, remote http server, database connection etc.
+{- | The `Environment` addresses following requirements:
+
+     - access and modify the application's state
+     - mockable services like
+       - logging
+       - other services like remote http server, database access, etc
+     - a 'Guard' for graceful shutdown
+     - access global configuration read at startup
 -}
 module Environment
     ( Environment(..)
@@ -34,11 +40,9 @@ create = do
     config@(Config (Config.Log mPath logLevel)) <-
             Config.parseCommandLineOptions
         >>= handleAny onConfigParsingError . Config.parseConfigFile . Config.cmdLineConfigFile
-    guard <- GracefulShutdown.createGuard
-     
     logFunction <-
             Log.makeLoggerSet mPath
         >>= Log.makeLogFunction logLevel
-    return $ Environment config logFunction guard
+    Environment config logFunction <$> GracefulShutdown.createGuard
   where
     onConfigParsingError = fail . ("Error parsing config file: " <>) . show
