@@ -4,8 +4,7 @@
      1, flushing after each log call.
 -}
 module Log
-    ( Constraint
-    , Function
+    ( Function
     , HasLog(..)
     , Level(..)
     , Log.debug
@@ -18,11 +17,14 @@ module Log
     ) where
 
 import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Control.Monad.Reader (MonadReader, asks)
 import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified System.Log.FastLogger as FL
+
+-- | Typeclass for logging functionality.
+class HasLog m where
+    getLogFunction :: m Log.Function
 
 {- | Make logger set without buffering (1 byte buffer). This logger set may be used to build a log
      function or to be passed to wai logging.
@@ -72,31 +74,24 @@ makeLogFunction minLogLevel loggerSet = do
               FL.pushLogStrLn loggerSet str'
     annotateWith str annotation = "[" <> annotation <> "] " <> str
 
--- | Logging constraint.
-type Constraint env m = (MonadIO m, MonadReader env m, HasLog env)
-
--- | Typeclass for logging functionality.
-class HasLog a where
-    getLogFunction :: a -> Log.Function
-
 -- helper function for debug, info, warning and error
-genericLog :: Constraint env m => Log.Level -> T.Text -> m ()
+genericLog :: (MonadIO m, HasLog m) => Log.Level -> T.Text -> m ()
 genericLog minLogLevel str = do
-    logFunction <- asks getLogFunction
+    logFunction <- getLogFunction
     liftIO . logFunction minLogLevel . FL.toLogStr $ str
 
 -- | Log with log level Debug.
-debug :: Constraint env m => T.Text -> m ()
+debug :: (MonadIO m, HasLog m) => T.Text -> m ()
 debug = genericLog Debug
 
 -- | Log with log level Info.
-info :: Constraint env m => T.Text -> m ()
+info :: (MonadIO m, HasLog m) => T.Text -> m ()
 info = genericLog Info
 
 -- | Log with log level Warning.
-warning :: Constraint env m => T.Text -> m ()
+warning :: (MonadIO m, HasLog m) => T.Text -> m ()
 warning = genericLog Warning
 
 -- | Log with log level Error.
-error :: Constraint env m => T.Text -> m ()
+error :: (MonadIO m, HasLog m) => T.Text -> m ()
 error = genericLog Error

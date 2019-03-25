@@ -1,3 +1,6 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE IncoherentInstances #-}
+
 {- | The `Environment` addresses following requirements:
 
      - access and modify the application's state
@@ -15,6 +18,7 @@ module Environment
 import qualified Control.Concurrent.STM as C
 import           Config (Config(..))
 import           Control.Exception.Safe (handleAny)
+import           Control.Monad.Reader (MonadReader, asks)
 import qualified Config
 import qualified GracefulShutdown
 import qualified Log
@@ -23,16 +27,16 @@ import qualified Log
 --   Includes a registry, with IO actions not be interrupted by shutdown.
 --   A 'Guard' is used by the signal handlers to process a graceful shutdown.
 data Environment = Environment
-    { envConfig :: !Config -- ^ Configuration.
-    , envLogFunction :: !Log.Function -- ^ Log function.
-    , envGuard :: !(C.TVar GracefulShutdown.Guard)
+    { envConfig :: Config -- ^ Configuration.
+    , envLogFunction :: Log.Function -- ^ Log function.
+    , envGuard :: C.TVar GracefulShutdown.Guard -- ^ Graceful shutdown guard.
     }
 
-instance Log.HasLog Environment where
-    getLogFunction = envLogFunction
+instance MonadReader Environment m => Log.HasLog m where
+    getLogFunction = asks envLogFunction
 
-instance GracefulShutdown.HasGracefulShutdown Environment where
-    getGuard = envGuard
+instance MonadReader Environment m => GracefulShutdown.HasGuard m where
+    getGuard = asks envGuard
 
 -- | Create environment with application's 'Settings', all external services are bound to "real" ones.
 create :: IO Environment

@@ -8,8 +8,7 @@
      - For a graceful shutdown you 'wait' until all guarded IO actions have finished.
 -}
 module GracefulShutdown
-    ( Constraint
-    , HasGracefulShutdown(..)
+    ( HasGuard(..)
     , Guard
     , createGuard
     , guard
@@ -22,11 +21,10 @@ import qualified Control.Concurrent.STM as STM
 import           Control.Exception.Safe (MonadMask, bracket)
 import           Control.Monad (when)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Control.Monad.Reader (MonadReader, asks)
 
 -- | Typeclass for shutdown functionalities.
-class HasGracefulShutdown a where
-    getGuard :: a -> STM.TVar Guard -- ^ Shutdown guard.
+class HasGuard m where
+    getGuard :: m (STM.TVar Guard) -- ^ Shutdown guard.
 
 {- | Guard the execution of an IO action
 
@@ -40,7 +38,7 @@ data Guard = Guard
     } deriving Eq
 
 -- | Constraint for shutdown functions.
-type Constraint env m = (MonadIO m, MonadReader env m, HasGracefulShutdown env)
+-- type Constraint env m = (MonadIO m, MonadReader env m, HasGracefulShutdown env)
 
 -- lift atomically
 atomically :: MonadIO m => STM.STM a -> m a
@@ -48,9 +46,9 @@ atomically = liftIO . STM.atomically
 
 -- | Suspend shutdown until action finishes. Return Nothing if action is not
 --   executed because of requested shutdown.
-guard :: (MonadMask m, Constraint env m) => m a -> m (Maybe a)
+guard :: (MonadMask m, MonadIO m, HasGuard m) => m a -> m (Maybe a)
 guard action = do
-    guardTVar <- asks getGuard
+    guardTVar <- getGuard
     bracket
         (atomically . register $ guardTVar)
         (\allowed -> when allowed (atomically . unregister $ guardTVar))
@@ -65,22 +63,22 @@ guard action = do
     incrPendingCount inc g = g { getPendingCount = inc + getPendingCount g }
 
 -- | Request shutdown.
-request :: Constraint env m => m ()
+request :: (MonadIO m, HasGuard m) => m ()
 request = do
-    guardTVar <- asks getGuard
+    guardTVar <- getGuard
     atomically . STM.modifyTVar guardTVar $ (\g -> g { getShutdownFlag = True })
 
 -- | Wait for shutdown completion, return if shutdown requested and all pending transactions
 --   finished.
-wait :: Constraint env m => m ()
+wait :: (MonadIO m, HasGuard m) => m ()
 wait = do
-    guardTVar <- asks getGuard
+    guardTVar <- getGuard
     atomically $ STM.readTVar guardTVar >>= STM.check . (== Guard True 0)
 
 -- | Shutdown requested?
-isScheduled :: Constraint env m => m Bool
+isScheduled :: (MonadIO m, HasGuard m) => m Bool
 isScheduled = do
-    guardTVar <- asks getGuard
+    guardTVar <- getGuard
     atomically $ getShutdownFlag <$> STM.readTVar guardTVar
 
 -- | Create synchronization primitive.

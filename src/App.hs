@@ -21,7 +21,7 @@ import           Control.Monad.IO.Class (liftIO, MonadIO)
 import           Control.Monad.Reader (MonadReader, ask, runReaderT)
 import qualified Data.Text as T
 import qualified Data.Version as Version
-import           Environment (Environment)
+import           Environment (Environment(..))
 import qualified GracefulShutdown
 import qualified Log
 import qualified Paths_appTemplate as Paths
@@ -53,16 +53,23 @@ run = do
     poll' = runReaderT . poll
 
 -- | Install signal handlers.
-installSignalHandlers :: (MonadIO m, MonadReader Environment m) => m ()
+--installSignalHandlers :: (MonadIO m, MonadReader Environment m) => m ()
+--installSignalHandlers = mapM_ installHandler Signals.terminateSignals
+--  where
+--    installHandler signal = do
+--        env <- ask
+--        Signals.installHandler (getSignalHandler signal env) signal
+--    getSignalHandler = runReaderT . signalHandler
+installSignalHandlers :: (MonadIO m, Log.HasLog m, GracefulShutdown.HasGuard m) => m ()
 installSignalHandlers = mapM_ installHandler Signals.terminateSignals
   where
     installHandler signal = do
-        env <- ask
+        env <- Environment undefined <$> Log.getLogFunction <*> GracefulShutdown.getGuard
         Signals.installHandler (getSignalHandler signal env) signal
     getSignalHandler = runReaderT . signalHandler
 
 -- report the signal and initiate shutdown
-signalHandler :: (MonadMask m, MonadIO m, MonadReader Environment m) => PS.Signal -> m ()
+signalHandler :: (MonadIO m, Log.HasLog m, GracefulShutdown.HasGuard m) => PS.Signal -> m ()
 signalHandler signal = do
     Log.info $ "Caught signal " <> (T.pack . show $ signal) <> ", shutting down..."
     GracefulShutdown.request
