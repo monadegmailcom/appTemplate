@@ -20,15 +20,19 @@ import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
 import qualified Data.Text as T
+import qualified MultiReader as MR
 import qualified System.Log.FastLogger as FL
 
 -- | Typeclass for logging functionality.
 class HasLog m where
     getLogFunction :: m Log.Function
 
+-- make it an instance of multireader
+instance MR.Constraint m Log.Function => HasLog m where
+    getLogFunction = MR.ask
+
 {- | Make logger set without buffering (1 byte buffer). This logger set may be used to build a log
-     function or to be passed to wai logging.
--}
+     function or to be passed to wai logging. -}
 makeLoggerSet :: Maybe FilePath -> IO FL.LoggerSet
 makeLoggerSet filePath = case filePath of
     -- construct logger sets without buffering (1 byte buffer)
@@ -64,7 +68,7 @@ makeLogFunction minLogLevel loggerSet = do
   where
     getLoggerFunction timeCache logLevel str
         -- skip logging if minimum log level not reached
-        | logLevel < minLogLevel = return ()         
+        | logLevel < minLogLevel = return ()
         | otherwise = do
               -- get formatted time from cache
               timeStr <- FL.toLogStr <$> timeCache

@@ -2,22 +2,32 @@
 module Config
     ( CommandLineOptions(..)
     , Config(..)
+    , HasConfig(..)
     , Log(..)
     , parseCommandLineOptions
     , parseConfigFile
     ) where
 
-import Data.Bifunctor (first)
+import           Data.Bifunctor (first)
 import qualified Data.CaseInsensitive as CI
 import qualified Data.Configurator as C
 import qualified Data.List as L
 import qualified Data.Text as T
 import qualified Data.Version as Version
 import qualified Log
+import qualified MultiReader as MR
 import qualified Options.Applicative as Options
 import qualified Paths_appTemplate as Paths
 
--- | Command line options. 
+-- | Typeclass for 'Config' access
+class HasConfig m where
+    getConfig :: m Config
+
+-- make it an instance of multireader
+instance MR.Constraint m Config => HasConfig m where
+    getConfig = MR.ask
+
+-- | Command line options.
 newtype CommandLineOptions = CommandLineOptions
     { cmdLineConfigFile :: FilePath }
 
@@ -70,8 +80,8 @@ parseConfigFile filePath = C.load [C.Required filePath] >>= parser
         let logLevels = map (first CI.mk . swap) Log.levels
             swap (a,b) = (b,a)
         in case L.lookup (CI.mk str) logLevels of
-            Nothing -> fail 
-                $ "Invalid log level, choose one of "
+            Nothing -> fail $
+                  "Invalid log level, choose one of "
                <> (T.unpack . T.intercalate ", " . map snd) Log.levels
             Just level -> return level
 

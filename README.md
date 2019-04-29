@@ -1,9 +1,16 @@
 # Application template
 
-This may be taken as a starting point for an application project. Some parts are inspired by a design
-pattern found [here](https://www.fpcomplete.com/blog/2017/06/readert-design-pattern). I decided
-against the [RIO](https://www.fpcomplete.com/blog/2017/07/the-rio-monad) framework for the moment, it
-seems to be a bit "too much".
+Starting point for an application project. Some parts are inspired by a design
+pattern found [here](https://www.fpcomplete.com/blog/2017/06/readert-design-pattern).
+It is not a framework but a source template to be adjusted to the requirements at hand.
+It features:
+
+- install signal handlers for process termination or user defined signal implementation
+- termination signals are transformed to asynchronous exception to be handled by user
+  threads. An example of masking this exception for an unterruptable operation is given
+- log to file or console with different log levels
+- start asynchronous event handlers like webservers or timed polling functions
+- a constraint based design is choosen to stress modularity making use of multireader module
 
 ## Generate html docs
 

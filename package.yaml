@@ -20,14 +20,20 @@ ghc-options:
 
 default-extensions:
 - ConstraintKinds
+- DataKinds
 - FlexibleContexts
 - FlexibleInstances
+- FunctionalDependencies
+- TemplateHaskell
 - LambdaCase
 - MonoLocalBinds
+- MultiParamTypeClasses
 - OverloadedStrings
+- RankNTypes
 - ScopedTypeVariables
 - TupleSections
 - TypeApplications
+- TypeOperators
 - UndecidableInstances
 
 dependencies:
@@ -40,12 +46,15 @@ library:
   - case-insensitive
   - configurator >= 0.3.0.0 && < 0.3.1
   - fast-logger >= 2.4.13 && < 2.5
+  - hreader >= 1.1.0 && < 1.2
+  - hset >= 2.2.0 && < 2.3
   - mtl >= 2.2.2 && < 2.3
   - optparse-applicative >= 0.14.3.0 && < 1.14.4
   - safe-exceptions >= 0.1.7.0 && < 0.1.8
   - stm >= 2.5.0.0 && < 2.5.1
   - text >= 1.2.3.1 && < 1.2.4
   - transformers >= 0.5.5.0 && < 0.5.6
+  - type-fun >= 0.1.1 && < 0.2
   - unix >= 2.7.2.2 && < 2.7.3
 
 executables:
@@ -60,7 +69,11 @@ executables:
     - -with-rtsopts=-qg
     dependencies:
     - appTemplate
+    - hreader >= 1.1.0 && < 1.2
+    - hset >= 2.2.0 && < 2.3
     - mtl >= 2.2.2 && < 2.3
+    - safe-exceptions >= 0.1.7.0 && < 0.1.8
+    - type-fun >= 0.1.1 && < 0.2
 
 tests:
   appTemplate-test:
@@ -74,10 +87,13 @@ tests:
     - appTemplate
     - async >= 2.2.1 && < 2.3
     - bytestring >= 0.10.8.2 && < 0.10.9
+    - hreader >= 1.1.0 && < 1.2
+    - hset >= 2.2.0 && < 2.3
     - hspec >= 1.8
     - fast-logger >= 2.4.13 && < 2.5
     - mtl >= 2.2.2 && < 2.3
     - silently >= 1.2.5 && < 1.3
+    - type-fun >= 0.1.1 && < 0.2
     - unix >= 2.7.2.2 && < 2.7.3
   hlint:
     main:                Hlint.hs
@@ -87,4 +103,4 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - hlint >= 1
+    - hlint >= 2.1.11

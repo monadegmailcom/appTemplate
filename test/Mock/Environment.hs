@@ -1,18 +1,14 @@
-{- | Mock services like logging, database connection etc.
--}
+{- | Mock services like logging, database connection etc. -}
 module Mock.Environment
-    ( create ) where
+    ( createLogFunction ) where
 
-import           Config (Config(..))
 import qualified Control.Concurrent as C
-import           Environment (Environment(..))
-import qualified GracefulShutdown
 import qualified Log
 import qualified System.Log.FastLogger as FL
 
 -- | Mocked application environment.
-create :: C.MVar [(Log.Level, FL.LogStr)] -> Config -> IO Environment
-create logSink config = Environment config logFunction <$> GracefulShutdown.createGuard
+createLogFunction :: C.MVar [(Log.Level, FL.LogStr)] -> Log.Function
+createLogFunction logSink = logFunction
   where
     logFunction level str = C.modifyMVar_ logSink (return . ((level, str) :))
 

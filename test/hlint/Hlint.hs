@@ -9,4 +9,4 @@ main = do
     hints <- hlint arguments
     if null hints then exitSuccess else exitFailure
   where
-    arguments = [ "src", "test" ]
+    arguments = [ "src", "test", "-XTypeApplications" ]
