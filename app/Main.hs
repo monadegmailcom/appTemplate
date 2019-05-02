@@ -7,24 +7,23 @@ import           Control.Exception.Safe (handleAny)
 import qualified Log
 import           MultiReader ((<:>))
 import qualified MultiReader as MR
+import qualified State
 
 -- entry point of process, start application with production environment
 main :: IO ()
 main = do
-    -- build environment for application's 'run' function
-    config <- buildConfig
-    logFunction <- buildLogFunction . Config.configLog $ config
-    let env = logFunction <:> config <:> MR.nil
-   
+    -- parse command line and parse config file accordingly
+    config <- Config.parseCommandLineOptions
+          >>= handleAny onConfigParsingError
+            . Config.parseConfigFile
+            . Config.cmdLineConfigFile
+    env <- let Config.Log mPath logLevel = Config.configLog config
+               makeLogFunction = Log.makeLoggerSet mPath >>= Log.makeLogFunction logLevel
+           in MR.makeList <$> makeLogFunction
     -- termination signals should be thrown as async exception to main thread
     C.myThreadId >>= MR.runReader env . App.installSignalHandlers
-    MR.runReader env App.run
+    state <- State.defaultState
+    MR.runReader (config <:> state <:> env) App.run
   where
-    -- parse command line and parse config file accordingly
-    buildConfig =
-            Config.parseCommandLineOptions
-        >>= handleAny onConfigParsingError . Config.parseConfigFile . Config.cmdLineConfigFile
-    buildLogFunction (Config.Log mPath logLevel) =
-        Log.makeLoggerSet mPath >>= Log.makeLogFunction logLevel
     -- do not start if config file parsing fails
     onConfigParsingError = fail . ("Error parsing config file: " <>) . show

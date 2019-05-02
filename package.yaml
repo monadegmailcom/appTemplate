@@ -73,6 +73,7 @@ executables:
     - hset >= 2.2.0 && < 2.3
     - mtl >= 2.2.2 && < 2.3
     - safe-exceptions >= 0.1.7.0 && < 0.1.8
+    - stm >= 2.5.0.0 && < 2.5.1
     - type-fun >= 0.1.1 && < 0.2
 
 tests:

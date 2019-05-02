@@ -2,8 +2,9 @@
 module MultiReader
     ( Constraint
     , (<:>)
+    , (<+>)
     , ask
-    , nil
+    , makeList
     , runReader
     ) where
 
@@ -12,14 +13,14 @@ import           Control.Monad.HReader ( MonadHReader, MHRElemsConstraint, MHREl
 import           Data.HSet (HGettable, HSet(..))
 import qualified TypeFun.Data.List as TypeFun
 
--- | Define 'a' to be a constraint to 'm'.
+-- | Define "a" to be a constraint to "m".
 type Constraint m a = MHRElemsConstraint m '[a]
 
--- | Ask a property from the multireader defined by the result type 'e'.
+-- | Ask a property from the multireader defined by the result type "e".
 ask :: (MonadHReader m, HGettable (MHRElements m) e) => m e
 ask = hask
 
--- | Transform the multireader to the monad 'm'.
+-- | Transform the multireader to the monad "m".
 runReader :: HSet els -> HReaderT els m a -> m a
 runReader = runHReaderT
 
@@ -30,7 +31,14 @@ runReader = runHReaderT
 -- be right associative
 infixr 1 <:>
 
--- | The empty type list.
-nil :: HSet '[]
-nil = HSNil
+-- | Convenience type list function.
+(<+>) :: (Monad m, TypeFun.NotElem a as) => m a -> m (HSet as) -> m (HSet (a : as))
+(<+>) ma mas = HSCons <$> ma <*> mas
+
+-- be right associative
+infixr 1 <+>
+
+-- | Convenience type list function.
+makeList :: a -> (HSet '[a])
+makeList = (<:> HSNil)
 

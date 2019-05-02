@@ -21,15 +21,16 @@ import           Control.Monad.IO.Class (liftIO, MonadIO)
 import qualified Data.Text as T
 import qualified Data.Version as Version
 import qualified Log
-import           MultiReader ((<:>))
+import           MultiReader ((<+>))
 import qualified MultiReader as MR
 import qualified Paths_appTemplate as Paths
+import qualified State
 import qualified System.Posix.Signals as PS
 
 {- | Start some event processing functions and blocks until all finish (e.g. by
      receiving an async exception from signal handler). For example usage,
      see "Main.hs" or "AppSpec.hs" -}
-run :: (MonadIO m, Config.HasConfig m, Log.HasLog m) => m ()
+run :: (MonadIO m, Config.HasConfig m, Log.HasLog m, State.HasState m) => m ()
 run = do
     -- log hello message with version info
     Log.info $ "Startup version " <> (T.pack . Version.showVersion) Paths.version
@@ -40,22 +41,24 @@ run = do
     -- environment. The poll functions terminate when an async exceptions is thrown to
     -- this thread. Notice: one of the poller is run masked uninterruptible, so it will
     -- delay termination until next iteration
-    logFunction <- Log.getLogFunction
-    let env = logFunction <:> MR.nil
-        runPoll = MR.runReader env . poll
-        pollers =
-            [ E.uninterruptibleMask_ $ runPoll "U"
-            , runPoll "A"
-            , runPoll "B"]
-    -- call pollers forever and log goodbye message when 'run' terminates
+    env <- Log.getLogFunction <+> MR.makeList <$> State.getState
+    let runPoll = MR.runReader env . poll
+        pollers = [ E.uninterruptibleMask_ $ runPoll "U"
+                  , runPoll "A"
+                  , runPoll "B"]
+    -- call pollers forever and log goodbye message finally
     -- when this thread receives as async exception all pollers are cancelled
-    -- when either poller throws an exception all sybling poller are cancelled
+    -- when either poller throws an exception all sibling pollers are cancelled
     liftIO $ E.finally (CA.mapConcurrently_ forever pollers)
                        (MR.runReader env $ Log.info "Shutdown complete")
 
 -- example async processing
-poll :: (MonadIO m, Log.HasLog m) => T.Text -> m ()
-poll msg = Log.info ("poll " <> msg) >> waitSome >> Log.info (msg <> " ..done")
+poll :: (MonadIO m, Log.HasLog m, State.HasState m) => T.Text -> m ()
+poll msg =
+        State.incCount
+    >>= Log.info . ("poll " <>) . (msg <>) . (" " <>) . T.pack . show
+    >>  waitSome
+    >>  Log.info (msg <> " ..done")
   where
     waitSome = liftIO . C.threadDelay $ 1000000 -- 1 sec
 
@@ -63,9 +66,8 @@ poll msg = Log.info ("poll " <> msg) >> waitSome >> Log.info (msg <> " ..done")
 -- given thread.
 installSignalHandlers :: (MonadIO m, Log.HasLog m) => C.ThreadId -> m ()
 installSignalHandlers threadId = do
-    logFunction <- Log.getLogFunction
-    let env = logFunction <:> MR.nil
-        installHandler signalHandler signal =
+    env <- MR.makeList <$> Log.getLogFunction
+    let installHandler signalHandler signal =
             PS.installHandler signal (runSignalHandler env signalHandler) Nothing
     liftIO $    installHandler usr1SignalHandler PS.sigUSR1
              >> mapM_ (installHandler termSignalHandler) terminateSignals
