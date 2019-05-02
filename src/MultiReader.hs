@@ -39,6 +39,6 @@ infixr 1 <:>
 infixr 1 <+>
 
 -- | Convenience type list function.
-makeList :: a -> (HSet '[a])
+makeList :: a -> HSet '[a]
 makeList = (<:> HSNil)
 
