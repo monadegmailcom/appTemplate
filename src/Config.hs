@@ -2,7 +2,6 @@
 module Config
     ( CommandLineOptions(..)
     , Config(..)
-    , HasConfig(..)
     , Log(..)
     , parseCommandLineOptions
     , parseConfigFile
@@ -15,17 +14,8 @@ import qualified Data.List as L
 import qualified Data.Text as T
 import qualified Data.Version as Version
 import qualified Log
-import qualified MultiReader as MR
 import qualified Options.Applicative as Options
 import qualified Paths_appTemplate as Paths
-
--- | Typeclass for 'Config' access
-class HasConfig m where
-    getConfig :: m Config
-
--- make it an instance of multireader
-instance MR.Constraint m Config => HasConfig m where
-    getConfig = MR.ask
 
 -- | Command line options.
 newtype CommandLineOptions = CommandLineOptions

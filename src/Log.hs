@@ -1,11 +1,9 @@
 {- | Log functionalities, relying on fast-logger package. As in multithreaded programs each thread has
      its own buffer, the order of output will not be the order of occurrance, because each thread's log
      buffer flushes when its full. The result is somewhat surprising. So we set the buffer size to
-     1, flushing after each log call.
--}
+     1, flushing after each log call.  -}
 module Log
     ( Function
-    , HasLog(..)
     , Level(..)
     , Log.debug
     , Log.error
@@ -16,20 +14,10 @@ module Log
     , makeLoggerSet
     ) where
 
-import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
 import qualified Data.Text as T
-import qualified MultiReader as MR
 import qualified System.Log.FastLogger as FL
-
--- | Typeclass for logging functionality.
-class HasLog m where
-    getLogFunction :: m Log.Function
-
--- make it an instance of multireader
-instance MR.Constraint m Log.Function => HasLog m where
-    getLogFunction = MR.ask
 
 {- | Make logger set without buffering (1 byte buffer). This logger set may be used to build a log
      function or to be passed to wai logging. -}
@@ -79,23 +67,21 @@ makeLogFunction minLogLevel loggerSet = do
     annotateWith str annotation = "[" <> annotation <> "] " <> str
 
 -- helper function for debug, info, warning and error
-genericLog :: (MonadIO m, HasLog m) => Log.Level -> T.Text -> m ()
-genericLog minLogLevel str = do
-    logFunction <- getLogFunction
-    liftIO . logFunction minLogLevel . FL.toLogStr $ str
+genericLog :: Log.Level -> Function -> T.Text -> IO ()
+genericLog minLogLevel logFunction = logFunction minLogLevel . FL.toLogStr
 
 -- | Log with log level Debug.
-debug :: (MonadIO m, HasLog m) => T.Text -> m ()
+debug :: Function -> T.Text -> IO ()
 debug = genericLog Debug
 
 -- | Log with log level Info.
-info :: (MonadIO m, HasLog m) => T.Text -> m ()
+info :: Function -> T.Text -> IO ()
 info = genericLog Info
 
 -- | Log with log level Warning.
-warning :: (MonadIO m, HasLog m) => T.Text -> m ()
+warning :: Function -> T.Text -> IO ()
 warning = genericLog Warning
 
 -- | Log with log level Error.
-error :: (MonadIO m, HasLog m) => T.Text -> m ()
+error :: Function -> T.Text -> IO ()
 error = genericLog Error

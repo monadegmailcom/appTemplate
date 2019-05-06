@@ -9,8 +9,6 @@ import           Data.Maybe (isJust)
 import qualified Data.Version as Version
 import qualified Log
 import qualified Mock.Environment
-import           MultiReader ((<:>))
-import qualified MultiReader as MR
 import qualified Paths_appTemplate as Paths
 import qualified State
 import qualified System.Environment
@@ -33,18 +31,18 @@ spec = context "App" $
                             `shouldSatisfy` ((Log.Info, "U ..done") `elem`)
   where
     version = FL.toLogStr . Version.showVersion $ Paths.version
-    waitForApplicationDone (_, logSink, appAsync) = do
+    waitForApplicationDone (_, _, _, logSink, appAsync) = do
         -- wait for application to finish
         CA.wait appAsync `shouldThrow` isJust @E.SomeAsyncException . E.fromException
         -- return log entries and chronologic order
         reverse <$> C.readMVar logSink
     raiseSigInt arg = PS.raiseSignal PS.sigINT >> return arg
-    startApplication (env, logSink) = do
+    startApplication (logFunction, config, state, logSink) = do
         -- start application asynchronously
-        appAsync <- CA.async $ MR.runReader env App.run
-        MR.runReader env $ App.installSignalHandlers $ CA.asyncThreadId appAsync
+        appAsync <- CA.async $ App.run logFunction config state
+        App.installSignalHandlers logFunction $ CA.asyncThreadId appAsync
 
-        return (env, logSink, appAsync)
+        return (logFunction, config, state, logSink, appAsync)
     createEnvironment configFile = do
         logSink <- C.newMVar []
         let logFunction = Mock.Environment.createLogFunction logSink
@@ -52,6 +50,6 @@ spec = context "App" $
                   Config.parseCommandLineOptions
               >>= Config.parseConfigFile . Config.cmdLineConfigFile
         state <- State.defaultState
-        return (config <:> logFunction <:> MR.singleton state, logSink)
+        return (logFunction, config, state, logSink)
     fixturesDir = "test/fixtures/"
 
