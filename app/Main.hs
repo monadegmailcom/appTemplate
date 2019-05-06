@@ -19,7 +19,7 @@ main = do
             . Config.cmdLineConfigFile
     env <- let Config.Log mPath logLevel = Config.configLog config
                makeLogFunction = Log.makeLoggerSet mPath >>= Log.makeLogFunction logLevel
-           in MR.makeList <$> makeLogFunction
+           in MR.singleton <$> makeLogFunction
     -- termination signals should be thrown as async exception to main thread
     C.myThreadId >>= MR.runReader env . App.installSignalHandlers
     state <- State.defaultState
