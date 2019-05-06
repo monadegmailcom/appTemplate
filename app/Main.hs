@@ -23,6 +23,7 @@ main = do
     -- termination signals should be thrown as async exception to main thread
     C.myThreadId >>= MR.runReader env . App.installSignalHandlers
     state <- State.defaultState
+    -- run reader in extended environment
     MR.runReader (config <:> state <:> env) App.run
   where
     -- do not start if config file parsing fails

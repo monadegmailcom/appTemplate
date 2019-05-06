@@ -41,7 +41,7 @@ run = do
     -- environment. The poll functions terminate when an async exceptions is thrown to
     -- this thread. Notice: one of the poller is run masked uninterruptible, so it will
     -- delay termination until next iteration
-    env <- Log.getLogFunction <+> MR.makeList <$> State.getState
+    env <- Log.getLogFunction <+> MR.singleton <$> State.getState
     let runPoll = MR.runReader env . poll
         pollers = [ E.uninterruptibleMask_ $ runPoll "U"
                   , runPoll "A"
@@ -66,7 +66,7 @@ poll msg =
 -- given thread.
 installSignalHandlers :: (MonadIO m, Log.HasLog m) => C.ThreadId -> m ()
 installSignalHandlers threadId = do
-    env <- MR.makeList <$> Log.getLogFunction
+    env <- MR.singleton <$> Log.getLogFunction
     let installHandler signalHandler signal =
             PS.installHandler signal (runSignalHandler env signalHandler) Nothing
     liftIO $    installHandler usr1SignalHandler PS.sigUSR1

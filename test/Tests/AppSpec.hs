@@ -52,6 +52,6 @@ spec = context "App" $
                   Config.parseCommandLineOptions
               >>= Config.parseConfigFile . Config.cmdLineConfigFile
         state <- State.defaultState
-        return (config <:> logFunction <:> MR.makeList state, logSink)
+        return (config <:> logFunction <:> MR.singleton state, logSink)
     fixturesDir = "test/fixtures/"
 

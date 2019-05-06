@@ -4,7 +4,7 @@ module MultiReader
     , (<:>)
     , (<+>)
     , ask
-    , makeList
+    , singleton
     , runReader
     ) where
 
@@ -31,14 +31,14 @@ runReader = runHReaderT
 -- be right associative
 infixr 1 <:>
 
--- | Convenience type list function.
+-- | Convenience type set function.
 (<+>) :: (Monad m, TypeFun.NotElem a as) => m a -> m (HSet as) -> m (HSet (a : as))
 (<+>) ma mas = HSCons <$> ma <*> mas
 
 -- be right associative
 infixr 1 <+>
 
--- | Convenience type list function.
-makeList :: a -> HSet '[a]
-makeList = (<:> HSNil)
+-- | Convenience type set function.
+singleton :: a -> HSet '[a]
+singleton = (<:> HSNil)
 
