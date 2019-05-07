@@ -11,7 +11,7 @@ import           Data.Bifunctor (first)
 import qualified Data.CaseInsensitive as CI
 import qualified Data.Configurator as C
 import qualified Data.List as L
-import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.Version as Version
 import qualified Log
 import qualified Options.Applicative as Options
@@ -72,6 +72,6 @@ parseConfigFile filePath = C.load [C.Required filePath] >>= parser
         in case L.lookup (CI.mk str) logLevels of
             Nothing -> fail $
                   "Invalid log level, choose one of "
-               <> (T.unpack . T.intercalate ", " . map snd) Log.levels
+               <> (TL.unpack . TL.intercalate ", " . map snd) Log.levels
             Just level -> return level
 

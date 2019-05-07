@@ -5,18 +5,14 @@
 module Log
     ( Function
     , Level(..)
-    , Log.debug
-    , Log.error
-    , Log.info
     , Log.levels
-    , Log.warning
     , makeLogFunction
     , makeLoggerSet
     ) where
 
 import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
-import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import qualified System.Log.FastLogger as FL
 
 {- | Make logger set without buffering (1 byte buffer). This logger set may be used to build a log
@@ -31,7 +27,7 @@ makeLoggerSet filePath = case filePath of
 data Level = Debug | Info | Warning | Error deriving (Eq, Ord, Show)
 
 -- | Available log levels with serialization.
-levels :: [(Level, T.Text)]
+levels :: [(Level, TL.Text)]
 levels =
     [ (Debug, "Debug")
     , (Info, "Info")
@@ -41,11 +37,11 @@ levels =
 
 -- display log level without Show instance because we want to avoid Prelude String
 -- error only happens if code is inconsistent
-display :: Level -> T.Text
+display :: Level -> TL.Text
 display = fromMaybe (Prelude.error "log level not found") . flip L.lookup levels
 
 -- | Log function, filter entries with appropriate log level.
-type Function = Level -> FL.LogStr -> IO ()
+type Function = Level -> TL.Text -> IO ()
 
 -- | Make log function from logger set.
 makeLogFunction :: Log.Level -> FL.LoggerSet -> IO Log.Function
@@ -61,27 +57,7 @@ makeLogFunction minLogLevel loggerSet = do
               -- get formatted time from cache
               timeStr <- FL.toLogStr <$> timeCache
               -- annotate string like this: [INFO] [Time] str
-              let str' = foldl annotateWith str [timeStr, levelStr]
+              let str' = foldl annotateWith (FL.toLogStr str) [timeStr, levelStr]
                   levelStr = FL.toLogStr . display $ logLevel
               FL.pushLogStrLn loggerSet str'
     annotateWith str annotation = "[" <> annotation <> "] " <> str
-
--- helper function for debug, info, warning and error
-genericLog :: Log.Level -> Function -> T.Text -> IO ()
-genericLog minLogLevel logFunction = logFunction minLogLevel . FL.toLogStr
-
--- | Log with log level Debug.
-debug :: Function -> T.Text -> IO ()
-debug = genericLog Debug
-
--- | Log with log level Info.
-info :: Function -> T.Text -> IO ()
-info = genericLog Info
-
--- | Log with log level Warning.
-warning :: Function -> T.Text -> IO ()
-warning = genericLog Warning
-
--- | Log with log level Error.
-error :: Function -> T.Text -> IO ()
-error = genericLog Error
