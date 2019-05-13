@@ -79,5 +79,6 @@ installSignalHandlers logger threadId =
         E.throwTo threadId E.UserInterrupt
     -- list of signals on which we want to terminate, this conforms to the linux defaults,
     -- see http://man7.org/linux/man-pages/man7/signal.7.html
-    terminateSignals = [PS.sigHUP, PS.sigINT, PS.sigPIPE, PS.sigALRM, PS.sigTERM]
+    -- exception is SIGPIPE, which we do want to ignore
+    terminateSignals = [PS.sigHUP, PS.sigINT, PS.sigALRM, PS.sigTERM]
 
