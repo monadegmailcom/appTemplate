@@ -10,9 +10,10 @@ import Test.Hspec
 spec :: Spec
 spec = context "Config" $
     context "with valid config file" $ before (return args) $
-        it "succeeds parsing config file" $ flip System.Environment.withArgs $ do
-            Config.CommandLineOptions configFile <- Config.parseCommandLineOptions
-            Config.parseConfigFile configFile `shouldReturn` validConfig
+        it "succeeds parsing config file" $ flip System.Environment.withArgs $
+            (     Config.parseCommandLineOptions
+              >>= Config.readConfigFile . Config.cmdLineConfigFile
+              >>= Config.parseConfigFile) `shouldReturn` validConfig
   where
     validConfig = Config (Config.Log Nothing Log.Info)
     args = ["-c", fixturesDir <> "valid.cfg"]

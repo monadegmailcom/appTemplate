@@ -50,7 +50,8 @@ spec = context "App" $
         let logFunction = Mock.Environment.createLogFunction logSink
         config <- System.Environment.withArgs ["-c", fixturesDir <> configFile] $
                   Config.parseCommandLineOptions
-              >>= Config.parseConfigFile . Config.cmdLineConfigFile
+              >>= Config.readConfigFile . Config.cmdLineConfigFile
+              >>= Config.parseConfigFile
         state <- State.defaultState
         return (logFunction, config, state, logSink)
     fixturesDir = "test/fixtures/"

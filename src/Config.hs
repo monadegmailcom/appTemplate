@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-cse #-}
+
 {- | Command line and config file parsing. -}
 module Config
     ( CommandLineOptions(..)
@@ -5,21 +7,25 @@ module Config
     , Log(..)
     , parseCommandLineOptions
     , parseConfigFile
+    , readConfigFile
     ) where
 
 import           Data.Bifunctor (first)
 import qualified Data.CaseInsensitive as CI
 import qualified Data.Configurator as C
+import qualified Data.Configurator.Types as C
 import qualified Data.List as L
 import qualified Data.Text.Lazy as TL
 import qualified Data.Version as Version
 import qualified Log
-import qualified Options.Applicative as Options
 import qualified Paths_appTemplate as Paths
+import           System.Console.CmdArgs ((&=))
+import qualified System.Console.CmdArgs as CA
 
 -- | Command line options.
-newtype CommandLineOptions = CommandLineOptions
-    { cmdLineConfigFile :: FilePath }
+data CommandLineOptions = CommandLineOptions
+    { cmdLineConfigFile :: FilePath } deriving (Show, CA.Data, CA.Typeable, Eq)
+{- HLINT ignore CommandLineOptions -}
 
 -- | Global configuration.
 newtype Config = Config
@@ -34,32 +40,25 @@ data Log = Log
 
 -- | Parse command line options, exit process on "help" or "version" option.
 parseCommandLineOptions :: IO CommandLineOptions
-parseCommandLineOptions = Options.execParser parserInfo
+parseCommandLineOptions = CA.cmdArgs commandLineOptions
   where
-    parserInfo = Options.info optionModifier Options.fullDesc
-    optionModifier = Options.helper
-        <*> versionParser
-        <*> fmap CommandLineOptions optionsParser
-    versionParser = Options.infoOption version
-         $ Options.short 'v'
-        <> Options.long "version"
-        <> Options.help "Show version"
-    -- version string, set in package.txt
+    commandLineOptions = CommandLineOptions
+        { cmdLineConfigFile
+            = defaultConfigFile &= CA.typFile
+           &= CA.explicit &= CA.name "c" &= CA.name "config"
+           &= CA.help "Path to configuration file" }
+      &= CA.summary ("appTemplate " <> version)
     version = Version.showVersion Paths.version
-    optionsParser = Options.strOption
-         $ Options.long "config"
-        <> Options.short 'c'
-        <> Options.value defaultConfigFile
-        <> Options.showDefault
-        <> Options.metavar "FILE"
-        <> Options.help "Path to configuration file"
     defaultConfigFile = "appTemplate.cfg"
 
+-- | Read config file.
+readConfigFile :: FilePath -> IO C.Config
+readConfigFile filePath = C.load [C.Required filePath]
+
 -- | Parse config file.
-parseConfigFile :: FilePath -> IO Config
-parseConfigFile filePath = C.load [C.Required filePath] >>= parser
+parseConfigFile :: C.Config -> IO Config
+parseConfigFile = fmap Config . logSectionParser
   where
-    parser cfg = Config <$> logSectionParser cfg
     logSectionParser cfg =
         let prefix = "Log."
         in Log

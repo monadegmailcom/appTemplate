@@ -28,14 +28,13 @@ import qualified State
 import qualified System.Posix.Signals as PS
 
 {- | Start some event processing functions and blocks until all finish (e.g. by
-     receiving an async exception from signal handler). For example usage,
+     receiving an async exception from signal handler). Note: log function, configuration
+     and state are build externally to make these mockable. For example usage,
      see "Main.hs" or "AppSpec.hs" -}
 run :: Log.Function -> Config.Config -> State.State -> IO ()
-run logger config state = do
+run logger _ state = do
     -- log hello message with version info
     logInfo $ F.format ("Startup version " % F.string) $ Version.showVersion Paths.version
-    -- log current (read-only) configuration, will not change until application restarts
-    logInfo $ F.format ("Initial configuration " % F.shown) config
 
     -- optionally we may start some asynchronous event processing in an appropriate
     -- environment. The poll functions terminate when an async exceptions is thrown to
