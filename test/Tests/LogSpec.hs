@@ -1,6 +1,7 @@
 module Tests.LogSpec (spec) where
 
-import qualified Log
+import qualified Effect.Log as Log
+import qualified Effect.Log.Impl as Log
 import qualified System.IO.Silently as Silently
 import           Test.Hspec 
 

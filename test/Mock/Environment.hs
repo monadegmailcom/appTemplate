@@ -4,7 +4,8 @@ module Mock.Environment
 
 import qualified Control.Concurrent as C
 import qualified Data.Text.Lazy as TL
-import qualified Log
+import qualified Effect.Log as Log
+import qualified Effect.Log.Impl as Log
 
 -- | Mocked application environment.
 createLogFunction :: C.MVar [(Log.Level, TL.Text)] -> Log.Function

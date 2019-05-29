@@ -1,4 +1,4 @@
 #!/bin/bash
 
-markdown README.md > README.html
+pandoc -f markdown -t html README.md -o README.html
 

@@ -1,23 +1,22 @@
-{-# OPTIONS_GHC -fno-cse #-}
-
 {- | Command line and config file parsing. -}
 module Config
     ( CommandLineOptions(..)
     , Config(..)
     , Log(..)
     , parseCommandLineOptions
-    , parseConfigFile
-    , readConfigFile
+    , parseIniFile
     ) where
 
 import           Data.Bifunctor (first)
 import qualified Data.CaseInsensitive as CI
-import qualified Data.Configurator as C
-import qualified Data.Configurator.Types as C
+import qualified Data.Ini as Ini
 import qualified Data.List as L
+import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Version as Version
-import qualified Log
+import qualified Effect.Log as Log
+import           Formatting ((%))
+import qualified Formatting as F
 import qualified Paths_appTemplate as Paths
 import           System.Console.CmdArgs ((&=))
 import qualified System.Console.CmdArgs as CA
@@ -49,28 +48,32 @@ parseCommandLineOptions = CA.cmdArgs commandLineOptions
            &= CA.help "Path to configuration file" }
       &= CA.summary ("appTemplate " <> version)
     version = Version.showVersion Paths.version
-    defaultConfigFile = "appTemplate.cfg"
+    defaultConfigFile = "appTemplate.ini"
 
--- | Read config file.
-readConfigFile :: FilePath -> IO C.Config
-readConfigFile filePath = C.load [C.Required filePath]
-
--- | Parse config file.
-parseConfigFile :: C.Config -> IO Config
-parseConfigFile = fmap Config . logSectionParser
+-- | Parse ini file semantically.
+parseIniFile :: Ini.Ini -> Either String Config
+parseIniFile ini = do
+    mPath <- lookupOptional "Log" "path"
+    level <- lookupValue "Log" "level" >>= toLogLevel
+    return $ Config $ Log (T.unpack <$> mPath) level
   where
-    logSectionParser cfg =
-        let prefix = "Log."
-        in Log
-            <$> C.lookup cfg (prefix <> "path")
-            <*> (C.require cfg (prefix <> "level") >>= toLogLevel)
+    -- handle empty values as not present
+    lookupValue section key =
+        let text2Either v = if T.null v then Left "empty value" else Right v
+        in Ini.lookupValue section key ini >>= text2Either
+    -- lookup optional value as Maybe
+    lookupOptional section key = case lookupValue section key of
+        Left _  -> Right Nothing
+        Right v -> Right $ Just v
     -- translate case insensitive string to log level
     toLogLevel str =
-        let logLevels = map (first CI.mk . swap) Log.levels
+        let logLevels = map (first (CI.mk . TL.toStrict) . swap) Log.levels
             swap (a,b) = (b,a)
-        in case L.lookup (CI.mk str) logLevels of
-            Nothing -> fail $
-                  "Invalid log level, choose one of "
-               <> (TL.unpack . TL.intercalate ", " . map snd) Log.levels
-            Just level -> return level
+            levelsStr = TL.intercalate ", " . map snd $ Log.levels
+            errorMsg = TL.unpack $ F.format
+                ("Invalid log level '" % F.stext % "', choose one of " % F.text)
+                str
+                levelsStr
+            maybe2Either e = maybe (Left e) Right
+        in maybe2Either errorMsg . L.lookup (CI.mk str) $ logLevels
 
