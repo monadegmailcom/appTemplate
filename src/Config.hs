@@ -20,6 +20,7 @@ import qualified Formatting as F
 import qualified Paths_appTemplate as Paths
 import           System.Console.CmdArgs ((&=))
 import qualified System.Console.CmdArgs as CA
+import qualified System.Environment as Environment
 
 -- | Command line options.
 data CommandLineOptions = CommandLineOptions
@@ -39,14 +40,17 @@ data Log = Log
 
 -- | Parse command line options, exit process on "help" or "version" option.
 parseCommandLineOptions :: IO CommandLineOptions
-parseCommandLineOptions = CA.cmdArgs commandLineOptions
+parseCommandLineOptions = do
+    procName <- head <$> Environment.getArgs
+    CA.cmdArgs $ getCommandLineOptions procName
   where
-    commandLineOptions = CommandLineOptions
+    getCommandLineOptions procName = CommandLineOptions
         { cmdLineConfigFile
             = defaultConfigFile &= CA.typFile
            &= CA.explicit &= CA.name "c" &= CA.name "config"
            &= CA.help "Path to configuration file" }
-      &= CA.summary ("appTemplate " <> version)
+      &= CA.summary (procName <> " " <> version)
+
     version = Version.showVersion Paths.version
     defaultConfigFile = "appTemplate.ini"
 

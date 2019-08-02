@@ -6,8 +6,7 @@ import qualified Data.Ini as Ini
 import qualified Data.Text.IO as T
 import qualified Effect.Log as Log
 import qualified System.Environment
-
-import Test.Hspec
+import           Test.Hspec
 
 spec :: Spec
 spec = context "Config" $
