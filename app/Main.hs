@@ -8,7 +8,6 @@ import qualified Control.Exception.Safe as E.Safe
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader (runReaderT)
 import           Control.Monad.Trans.Control (control)
-import qualified Data.Ini as Ini
 import qualified Data.Text.IO as T
 import qualified Data.Version as Version
 import qualified Effect.CmdLine as CmdLine
@@ -27,13 +26,13 @@ data IniFileException = IniFileException String deriving (Show, E.Exception)
 main :: IO ()
 main = do
            -- parse command line for config file
-    ini <- CmdLine.parseCommandLineOptions
+    content <- CmdLine.parseCommandLineOptions
            -- read config file accordingly
        >>= T.readFile . CmdLine.cmdLineConfigFile
            -- parse config file syntactically to ini type
-       >>= either (E.Safe.throwM . IniFileException) return . Ini.parseIni
     -- parse configuration semantically from ini type
-    config <- either (E.Safe.throwM . IniFileException) return . Config.parseIniFile $ ini
+    (config, prettyContent) <-
+        either (E.Safe.throwM . IniFileException) return . Config.parseIniFile $ content
     -- build logger from configuration
     logger <- let Config.Log mPath logLevel = Config.configLog config
               in Log.makeLoggerSet mPath >>= Log.makeLogFunction logLevel
@@ -41,7 +40,7 @@ main = do
     env <- App.Impl.Env logger <$> State.defaultState
     flip runReaderT env $ do
         -- log current (read-only) configuration from pretty printed ini type
-        Log.info . F.format ("Initial configuration\n" % F.stext) . Ini.printIni $ ini
+        Log.info . F.format ("Initial configuration\n" % F.stext) $ prettyContent
         -- termination signals should be thrown as async exception to main thread
         liftIO C.myThreadId >>= App.Impl.installSignalHandlers
         -- log greeting message with version info

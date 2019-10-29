@@ -48,7 +48,7 @@ instance State.Impl.HasState App where
 {- | Start poller asynchronously. Poller will terminate on asynchronous exceptions.
      If either poller throws an exception all sibling pollers will terminate. -}
 runPollers :: App ()
-runPollers = 
+runPollers =
     -- note: one of the poller is run masked uninterruptable, it will
     -- delay termination until next iteration by 'forever'
     control $ \runInIO -> CA.mapConcurrently_ forever
@@ -59,11 +59,11 @@ runPollers =
 {- | Install signal handlers. Terminate signals are transformed to async exception thrown to
      given thread. -}
 installSignalHandlers :: C.ThreadId -> App ()
-installSignalHandlers threadId = 
+installSignalHandlers threadId =
        installHandler usr1SignalHandler PS.sigUSR1
     >> mapM_ (installHandler termSignalHandler) terminateSignals
   where
-    toStr signalInfo msg = 
+    toStr signalInfo msg =
         let signal = PS.siginfoSignal signalInfo
         in F.format ("Caught signal " % F.shown % ", " % F.text) signal msg
     usr1SignalHandler signalInfo = Log.info $ toStr signalInfo "ignore"

@@ -27,20 +27,20 @@ data Log = Log
     } deriving (Eq, Show)
 
 -- | Parse ini file semantically.
-parseIniFile :: Ini.Ini -> Either String Config
-parseIniFile ini = do
+parseIniFile :: T.Text -> Either String (Config, T.Text)
+parseIniFile content = do
+    ini <- Ini.parseIni content
+        -- handle empty values as not present
+    let lookupValue section key = Ini.lookupValue section key ini >>= text2Either
+        -- lookup optional value as Maybe
+        lookupOptional section key = case lookupValue section key of
+            Left _  -> Right Nothing
+            Right v -> Right $ Just v
     mPath <- lookupOptional "Log" "path"
     level <- lookupValue "Log" "level" >>= toLogLevel
-    return $ Config $ Log (T.unpack <$> mPath) level
+    return (Config $ Log (T.unpack <$> mPath) level, Ini.printIni ini)
   where
-    -- handle empty values as not present
-    lookupValue section key =
-        let text2Either v = if T.null v then Left "empty value" else Right v
-        in Ini.lookupValue section key ini >>= text2Either
-    -- lookup optional value as Maybe
-    lookupOptional section key = case lookupValue section key of
-        Left _  -> Right Nothing
-        Right v -> Right $ Just v
+    text2Either v = if T.null v then Left "empty value" else Right v
     -- translate case insensitive string to log level
     toLogLevel str =
         let logLevels = map (first (CI.mk . TL.toStrict) . swap) Log.levels

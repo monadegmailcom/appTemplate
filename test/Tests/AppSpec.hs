@@ -9,7 +9,6 @@ import qualified Control.Concurrent.Async as CA
 import qualified Control.Exception as E
 import           Control.Monad.Reader (ReaderT, ask, runReaderT)
 import           Control.Monad.Trans.Control (control)
-import qualified Data.Ini as Ini
 import           Data.Maybe (isJust)
 import qualified Data.Text.IO as T
 import qualified Effect.CmdLine as CmdLine
@@ -58,7 +57,7 @@ spec = context "App" $
         configContent <- System.Environment.withArgs ["-c", fixturesDir <> configFile] $
                          CmdLine.parseCommandLineOptions
                      >>= T.readFile . CmdLine.cmdLineConfigFile
-        let config = either error id $ Ini.parseIni configContent >>= Config.parseIniFile
+        let config = either error id $ Config.parseIniFile configContent
         env <- App.Impl.Env logFunction <$> State.defaultState
         return (env, config, logSink)
     fixturesDir = "test/fixtures/"
