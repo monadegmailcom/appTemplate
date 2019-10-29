@@ -51,10 +51,11 @@ runPollers :: App ()
 runPollers =
     -- note: one of the poller is run masked uninterruptable, it will
     -- delay termination until next iteration by 'forever'
-    control $ \runInIO -> CA.mapConcurrently_ forever
-        [ E.uninterruptibleMask_ $ runInIO $ Poll.poll "U"
-        , runInIO $ Poll.poll "A"
-        , runInIO $ Poll.poll "B"]
+    control $ \runInIO -> let poll = runInIO . Poll.poll
+                          in CA.mapConcurrently_ forever
+                              [ E.uninterruptibleMask_ $ poll "U"
+                              , poll "A"
+                              , poll "B"]
 
 {- | Install signal handlers. Terminate signals are transformed to async exception thrown to
      given thread. -}
