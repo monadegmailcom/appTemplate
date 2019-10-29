@@ -11,6 +11,8 @@ import           Control.Monad.Trans.Control (control)
 import qualified Data.Ini as Ini
 import qualified Data.Text.IO as T
 import qualified Data.Version as Version
+import qualified Effect.CmdLine as CmdLine
+import qualified Effect.CmdLine.Impl as CmdLine ()
 import qualified Effect.Log as Log
 import qualified Effect.Log.Impl as Log
 import qualified Effect.State.Impl as State
@@ -25,9 +27,9 @@ data IniFileException = IniFileException String deriving (Show, E.Exception)
 main :: IO ()
 main = do
            -- parse command line for config file
-    ini <- Config.parseCommandLineOptions
+    ini <- CmdLine.parseCommandLineOptions
            -- read config file accordingly
-       >>= T.readFile . Config.cmdLineConfigFile
+       >>= T.readFile . CmdLine.cmdLineConfigFile
            -- parse config file syntactically to ini type
        >>= either (E.Safe.throwM . IniFileException) return . Ini.parseIni
     -- parse configuration semantically from ini type

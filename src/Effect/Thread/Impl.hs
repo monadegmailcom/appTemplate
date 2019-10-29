@@ -1,5 +1,5 @@
 {- | Threading effect implementation. -}
-module Effect.Thread.Impl 
+module Effect.Thread.Impl
     ( delay ) where
 
 import qualified Control.Concurrent as C

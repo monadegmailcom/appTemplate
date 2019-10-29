@@ -1,9 +1,7 @@
 {- | Command line and config file parsing. -}
 module Config
-    ( CommandLineOptions(..)
-    , Config(..)
+    ( Config(..)
     , Log(..)
-    , parseCommandLineOptions
     , parseIniFile
     ) where
 
@@ -13,18 +11,9 @@ import qualified Data.Ini as Ini
 import qualified Data.List as L
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
-import qualified Data.Version as Version
 import qualified Effect.Log as Log
 import           Formatting ((%))
 import qualified Formatting as F
-import qualified Paths_appTemplate as Paths
-import           System.Console.CmdArgs ((&=))
-import qualified System.Console.CmdArgs as CA
-
--- | Command line options.
-data CommandLineOptions = CommandLineOptions
-    { cmdLineConfigFile :: FilePath } deriving (Show, CA.Data, CA.Typeable, Eq)
-{- HLINT ignore CommandLineOptions -}
 
 -- | Global configuration.
 newtype Config = Config
@@ -36,22 +25,6 @@ data Log = Log
     { logFile :: !(Maybe FilePath) -- ^ log to stdout if Nothing
     , logLevel :: !Log.Level -- ^ filter messages with minimum level
     } deriving (Eq, Show)
-
-
--- | Parse command line options, exit process on "help" or "version" option.
-parseCommandLineOptions :: IO CommandLineOptions
-parseCommandLineOptions = CA.cmdArgs getCommandLineOptions
-  where
-    procName = "appTemplate"
-    getCommandLineOptions = CommandLineOptions
-        { cmdLineConfigFile
-            = defaultConfigFile &= CA.typFile
-           &= CA.explicit &= CA.name "c" &= CA.name "config"
-           &= CA.help "Path to configuration file" }
-      &= CA.summary (procName <> " " <> version)
-
-    version = Version.showVersion Paths.version
-    defaultConfigFile = "appTemplate.ini"
 
 -- | Parse ini file semantically.
 parseIniFile :: Ini.Ini -> Either String Config

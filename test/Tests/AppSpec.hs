@@ -12,6 +12,8 @@ import           Control.Monad.Trans.Control (control)
 import qualified Data.Ini as Ini
 import           Data.Maybe (isJust)
 import qualified Data.Text.IO as T
+import qualified Effect.CmdLine as CmdLine
+import qualified Effect.CmdLine.Impl as CmdLine ()
 import qualified Effect.Log as Log
 import qualified Effect.Log.Impl as Log
 import qualified Effect.State.Impl as State
@@ -54,8 +56,8 @@ spec = context "App" $
         logSink <- C.newMVar []
         let logFunction = Mock.Environment.createLogFunction logSink
         configContent <- System.Environment.withArgs ["-c", fixturesDir <> configFile] $
-                         Config.parseCommandLineOptions
-                     >>= T.readFile . Config.cmdLineConfigFile
+                         CmdLine.parseCommandLineOptions
+                     >>= T.readFile . CmdLine.cmdLineConfigFile
         let config = either error id $ Ini.parseIni configContent >>= Config.parseIniFile
         env <- App.Impl.Env logFunction <$> State.defaultState
         return (env, config, logSink)

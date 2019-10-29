@@ -4,6 +4,8 @@ import           Config (Config(..))
 import qualified Config
 import qualified Data.Ini as Ini
 import qualified Data.Text.IO as T
+import qualified Effect.CmdLine as CmdLine
+import qualified Effect.CmdLine.Impl as CmdLine ()
 import qualified Effect.Log as Log
 import qualified System.Environment
 import           Test.Hspec
@@ -12,8 +14,8 @@ spec :: Spec
 spec = context "Config" $
     context "with valid config file" $ before (return args) $
         it "succeeds parsing config file" $ flip System.Environment.withArgs $
-            (     Config.parseCommandLineOptions
-              >>= T.readFile . Config.cmdLineConfigFile
+            (     CmdLine.parseCommandLineOptions
+              >>= T.readFile . CmdLine.cmdLineConfigFile
               >>= either error return . Ini.parseIni
               >>= either error return . Config.parseIniFile) `shouldReturn` validConfig
   where
