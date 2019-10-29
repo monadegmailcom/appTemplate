@@ -1,11 +1,13 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 {- | Threading effect implementation. -}
 module Effect.Thread.Impl
-    ( delay ) where
+    () where
 
 import qualified Control.Concurrent as C
 import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Effect.Thread
 
--- | Delay milliseconds.
-delay :: MonadIO m => Int -> m ()
-delay = liftIO . C.threadDelay
+instance (Monad m, MonadIO m) => ThreadM m where
+    delay = liftIO . C.threadDelay
 

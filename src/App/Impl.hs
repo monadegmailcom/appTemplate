@@ -23,12 +23,10 @@ import           Control.Monad.Trans.Control (control)
 import qualified Effect.Log as Log
 import qualified Effect.Log.Impl as Log.Impl
 import qualified Effect.State.Impl as State.Impl
-import qualified Effect.Thread as Thread
-import qualified Effect.Thread.Impl as Thread.Impl
+import qualified Effect.Thread.Impl as Thread.Impl ()
 import           Formatting ((%))
 import qualified Formatting as F
 import qualified System.Posix.Signals as PS
-
 
 {- | The application's effect implementation. -}
 data Env = Env
@@ -46,10 +44,6 @@ instance Log.Impl.HasLog App where
 -- give application access to state
 instance State.Impl.HasState App where
     getState = asks envState
-
--- give application access to thread effects
-instance Thread.ThreadM App where
-    delay = Thread.Impl.delay
 
 {- | Start poller asynchronously. Poller will terminate on asynchronous exceptions.
      If either poller throws an exception all sibling pollers will terminate. -}

@@ -4,4 +4,5 @@ module Effect.Thread
 
 -- | Thread effect.
 class Monad m => ThreadM m where
+    -- | Delay milliseconds.
     delay :: Int -> m () 
