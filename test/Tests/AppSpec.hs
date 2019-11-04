@@ -7,22 +7,18 @@ import qualified Config
 import qualified Control.Concurrent as C
 import qualified Control.Concurrent.Async as CA
 import qualified Control.Exception as E
-import           Control.Monad.Reader (ReaderT, ask, runReaderT)
+import           Control.Monad.Reader (runReaderT)
 import           Control.Monad.Trans.Control (control)
 import           Data.Maybe (isJust)
 import qualified Data.Text.IO as T
 import qualified Effect.CmdLine as CmdLine
 import qualified Effect.CmdLine.Impl as CmdLine ()
 import qualified Effect.Log as Log
-import qualified Effect.Log.Impl as Log
 import qualified Effect.State.Impl as State
 import qualified Mock.Environment
 import qualified System.Environment
 import qualified System.Posix.Signals as PS
 import           Test.Hspec
-
-instance Log.HasLog (ReaderT Log.Function IO) where
-    getLogFunction = ask
 
 spec :: Spec
 spec = context "App" $
@@ -42,7 +38,7 @@ spec = context "App" $
     waitForApplicationDone (logSink, appAsync) = do
         -- wait for application to finish
         CA.wait appAsync `shouldThrow` isJust @E.SomeAsyncException . E.fromException
-        -- return log entries and chronologic order
+        -- return log entries in chronological order
         reverse <$> C.readMVar logSink
     startApplication (env, _, logSink) = do
         -- start application asynchronously
@@ -53,12 +49,12 @@ spec = context "App" $
         return (logSink, appAsync)
     createContext configFile = do
         logSink <- C.newMVar []
-        let logFunction = Mock.Environment.createLogFunction logSink
-        configContent <- System.Environment.withArgs ["-c", fixturesDir <> configFile] $
+        config <- System.Environment.withArgs ["-c", fixturesDir <> configFile] $
                          CmdLine.parseCommandLineOptions
                      >>= T.readFile . CmdLine.cmdLineConfigFile
-        let config = either error id $ Config.parseIniFile configContent
-        env <- App.Impl.Env logFunction <$> State.defaultState
+                     >>= either error return . Config.parseIniFile
+        state <- State.defaultState
+        let env = App.Impl.Env (Mock.Environment.createLogFunction logSink) state
         return (env, config, logSink)
     fixturesDir = "test/fixtures/"
 
