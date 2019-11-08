@@ -19,6 +19,7 @@ data Redis = Redis { redisMaster   :: Maybe Redis.Connection
                    , redisSlaves   :: [Redis.Connection]
                    , redisSentinel :: Maybe Redis.Connection }
 
+-- | Provide Redis implementation.
 class HasDatabase m where
     getRedis :: m (STM.TVar Redis) -- ^ Get redis implementation.
 
@@ -30,6 +31,7 @@ instance (Monad m, E.MonadThrow m, MonadIO m, HasDatabase m) => DatabaseM m wher
         status <- getMaster >>= runRedis (Redis.set key value)
         when (status /= Redis.Ok) $ E.throw . Exception . Redis.Error . BS.pack . show $ status
 
+-- | Wrap Redis.Reply in exception.
 newtype Exception = Exception Redis.Reply deriving (Eq, Show, E.Exception)
 
 throwReply :: E.MonadThrow m => Either Redis.Reply a -> m a
