@@ -1,3 +1,6 @@
+-- disable warning concerning Redis.PortID, I cannot do anything about it
+{-# OPTIONS_GHC -Wno-deprecations #-}
+
 module Tests.ConfigSpec (spec) where
 
 import qualified Config
@@ -8,6 +11,7 @@ import qualified Data.Ini as Ini
 import qualified Data.List as List
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Database.Redis as Redis
 import qualified Effect.CmdLine as CmdLine
 import qualified Effect.CmdLine.Impl as CmdLine ()
 import qualified Effect.Log as Log
@@ -27,14 +31,14 @@ spec = context "Config" $
                 (Config.Internal.parseFromIni . update "Log" "level" (Just "invalid")) ini
                     `shouldBe` Left "Invalid log level 'invalid', choose one of Debug, \
                                     \Info, Warning, Error"
-            it "reject invalid port" $ \ini ->
-                (Config.Internal.parseFromIni . update "Redis" "port" (Just "invalid")) ini
-                    `shouldBe` Left "input does not start with a digit"
+            it "reject invalid redis url" $ \ini ->
+                (Config.Internal.parseFromIni . update "Redis" "url" (Just "invalid")) ini
+                    `shouldBe` Left "Invalid URI"
             it "reject invalid connectTimeout" $ \ini ->
                 (Config.Internal.parseFromIni . update "Redis" "connectTimeout" (Just "invalid")) ini
                     `shouldBe` Left "input does not start with a digit"
             it "reject ini with missing mandatory keys" $ \ini -> do
-                let mandatoryKeys = [("Log", "level"), ("Redis", "host"), ("Redis", "port")]
+                let mandatoryKeys = [("Log", "level"), ("Redis", "url")]
                     parseWithRemovedKey (section, key) =
                         Config.Internal.parseFromIni . update section key Nothing $ ini
                 mapM_ (\sectionAndKey -> parseWithRemovedKey sectionAndKey `shouldBe`
@@ -48,7 +52,11 @@ spec = context "Config" $
     readConfig = flip System.Environment.withArgs
                $ CmdLine.parseCommandLineOptions >>= T.readFile . CmdLine.cmdLineConfigFile
     right e = (e `shouldSatisfy` isRight) >> either (error "left") return e
+    validConnectInfo = Redis.defaultConnectInfo { Redis.connectHost = "localhost"
+                                                , Redis.connectPort = Redis.PortNumber 8888
+                                                , Redis.connectAuth = Just "secretpwd"
+                                                , Redis.connectTimeout = Just 10.5 }
     validConfig = Config.Config (Config.Log (Just "out.log") Log.Info)
-                                (Config.Redis "localhost" 8888 (Just "secret pwd") (Just 10.5))
+                                (Config.Redis validConnectInfo)
     validArgs = ["-c", fixturesDir <> "valid.ini"]
     fixturesDir = "test/fixtures/"

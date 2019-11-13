@@ -15,11 +15,13 @@ module App.Impl
 import qualified Poll
 import qualified Control.Concurrent as C
 import qualified Control.Concurrent.Async as CA
+import qualified Control.Concurrent.STM as STM
 import qualified Control.Exception as E
 import           Control.Monad (forever, void)
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader (ReaderT, asks)
 import           Control.Monad.Trans.Control (control)
+import qualified Effect.Database.Impl as Database.Impl
 import qualified Effect.Log as Log
 import qualified Effect.Log.Impl as Log.Impl
 import qualified Effect.State.Impl as State.Impl
@@ -32,6 +34,7 @@ import qualified System.Posix.Signals as PS
 data Env = Env
     { envLogFunction :: Log.Impl.Function
     , envState :: State.Impl.State
+    , envRedis :: STM.TVar Database.Impl.Redis
     }
 
 -- | Encapsulate the application's access to effects.
@@ -45,17 +48,24 @@ instance Log.Impl.HasLog App where
 instance State.Impl.HasState App where
     getState = asks envState
 
+-- give application access to redis
+instance Database.Impl.HasDatabase App where
+    getRedis = asks envRedis
+
 {- | Start poller asynchronously. Poller will terminate on asynchronous exceptions.
      If either poller throws an exception all sibling pollers will terminate. -}
 runPollers :: App ()
 runPollers =
     -- note: one of the poller is run masked uninterruptable, it will
     -- delay termination until next iteration by 'forever'
-    control $ \runInIO -> let poll = runInIO . Poll.poll
+    control $ \runInIO -> let pollState = runInIO . Poll.pollState
+                              pollRedis = runInIO . Poll.pollRedis
                           in CA.mapConcurrently_ forever
-                              [ E.uninterruptibleMask_ $ poll "U"
-                              , poll "A"
-                              , poll "B"]
+                              [ E.uninterruptibleMask_ $ pollState "U"
+                              , pollState "S"
+                              , pollRedis "R1"
+                              , pollRedis "R2"
+                              ]
 
 {- | Install signal handlers. Terminate signals are transformed to async exception thrown to
      given thread. -}

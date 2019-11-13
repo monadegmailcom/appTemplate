@@ -3,6 +3,7 @@ module Main where
 import qualified App.Impl
 import qualified Config
 import qualified Control.Concurrent as C
+import qualified Control.Concurrent.STM as STM
 import qualified Control.Exception as E
 import qualified Control.Exception.Safe as E.Safe
 import           Control.Monad.IO.Class (liftIO)
@@ -10,6 +11,7 @@ import           Control.Monad.Reader (runReaderT)
 import           Control.Monad.Trans.Control (control)
 import qualified Data.Text.IO as T
 import qualified Data.Version as Version
+import qualified Effect.Database.Impl as Database
 import qualified Effect.CmdLine as CmdLine
 import qualified Effect.CmdLine.Impl as CmdLine ()
 import qualified Effect.Log as Log
@@ -37,7 +39,12 @@ main = do
     logger <- let Config.Log mPath logLevel = Config.configLog config
               in Log.makeLoggerSet mPath >>= Log.makeLogFunction logLevel
     -- define environment with effect implementations
-    env <- App.Impl.Env logger <$> State.defaultState
+    env <- do
+        state <- State.defaultState
+        let redisConfig = Config.configRedis config
+        redisConnection <- Database.connect . Config.redisConnectInfo $ redisConfig
+        redis <- STM.newTVarIO $ Database.Redis redisConnection redisConfig
+        return $ App.Impl.Env logger state redis
     flip runReaderT env $ do
         -- log current (read-only) configuration from pretty printed ini type
         Log.info . F.format ("Initial configuration\n" % F.stext) $ prettyContent

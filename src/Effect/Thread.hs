@@ -2,7 +2,11 @@
 module Effect.Thread
     ( ThreadM(..)) where
 
+import qualified Time.Units
+
+type Second = Time.Units.Time Time.Units.Second
+
 -- | Thread effect.
 class Monad m => ThreadM m where
-    -- | Delay milliseconds.
-    delay :: Int -> m () 
+    delay :: Second -> m ()
+    timeout :: Second -> m a -> m (Maybe a)
