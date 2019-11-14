@@ -36,6 +36,7 @@ import qualified Time.Units
 spec :: Spec
 spec = context "App" $
         context "with valid config" $ beforeAll setup . afterAll cleanup $
+--            context "with redis connect at startup failed" $
             context "with application started" $ beforeWith startApplication $
                 context "with USR1 and INT signals sent" $ beforeWith
                     (\ctx -> mapM_ PS.raiseSignal [PS.sigUSR1, PS.sigINT] >> return ctx) $
@@ -78,7 +79,7 @@ setup = do
     let redisConfig = Config.configRedis config
     processHandle <- startRedis (Config.redisConnectInfo redisConfig) >>= C.newMVar
     redis <- do
-        redisConnection <- Database.Impl.connect . Config.redisConnectInfo $ redisConfig
+        redisConnection <- Redis.checkedConnect . Config.redisConnectInfo $ redisConfig
         STM.newTVarIO $ Database.Impl.Redis redisConnection redisConfig
     logSink <- C.newMVar []
     state <- State.defaultState

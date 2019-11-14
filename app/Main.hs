@@ -11,6 +11,7 @@ import           Control.Monad.Reader (runReaderT)
 import           Control.Monad.Trans.Control (control)
 import qualified Data.Text.IO as T
 import qualified Data.Version as Version
+import qualified Database.Redis as Redis
 import qualified Effect.Database.Impl as Database
 import qualified Effect.CmdLine as CmdLine
 import qualified Effect.CmdLine.Impl as CmdLine ()
@@ -42,7 +43,7 @@ main = do
     env <- do
         state <- State.defaultState
         let redisConfig = Config.configRedis config
-        redisConnection <- Database.connect . Config.redisConnectInfo $ redisConfig
+        redisConnection <- (Redis.connect . Config.redisConnectInfo $ redisConfig)
         redis <- STM.newTVarIO $ Database.Redis redisConnection redisConfig
         return $ App.Impl.Env logger state redis
     flip runReaderT env $ do
@@ -52,6 +53,11 @@ main = do
         liftIO C.myThreadId >>= App.Impl.installSignalHandlers
         -- log greeting message with version info
         Log.info . F.format ("Startup version " % F.string) $ Version.showVersion Paths.version
+        -- test redis connection on startup
+        Log.info "Ping redis connection.."
+        Database.runRedis Redis.ping >>= Log.info . F.format ("Redis reply: " % F.shown)
+        -- the application is up and running now
+        Log.info "Application initialized"
         -- call pollers forever and log goodbye message finally
         -- if this thread receives as async exception all pollers are cancelled
         -- if either poller throws an exception all sibling pollers are cancelled

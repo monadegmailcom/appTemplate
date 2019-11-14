@@ -5,7 +5,7 @@ module Effect.Database.Impl
     ( Exception(..)
     , HasDatabase(..)
     , Redis(..)
-    , connect
+    , runRedis
     ) where
 
 import qualified Config
@@ -36,9 +36,7 @@ instance (Monad m, E.MonadThrow m, E.MonadCatch m, MonadIO m, HasDatabase m) => 
 -- | Wrap Redis.Reply in exception.
 newtype Exception = Exception Redis.Reply deriving (Eq, Show, E.Exception)
 
-connect :: MonadIO m => Redis.ConnectInfo -> m Redis.Connection
-connect = liftIO . Redis.checkedConnect
-
+-- | Run redis action and retry once on failure.
 runRedis :: (E.MonadThrow m, E.MonadCatch m, HasDatabase m, MonadIO m)
          => Redis.Redis (Either Redis.Reply a) -> m a
 runRedis action = getRedis >>= retryOnce reconnect . liftIO . run
@@ -48,7 +46,7 @@ runRedis action = getRedis >>= retryOnce reconnect . liftIO . run
     reconnect _ = do
         tvar <- getRedis
         connection <- (liftIO . STM.readTVarIO) tvar
-                  >>= connect . Config.redisConnectInfo . redisConfig
+                  >>= liftIO . Redis.connect . Config.redisConnectInfo . redisConfig
         liftIO . STM.atomically . STM.modifyTVar tvar
             $ (\redis -> redis { redisConnection = connection })
 

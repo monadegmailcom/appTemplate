@@ -74,6 +74,7 @@ executables:
     - appTemplate
     - base >= 4.7 && < 5
     - formatting >= 6.3.7 && < 6.4
+    - hedis >= 0.10.10 && < 0.11
     - ini >= 0.3.6 && < 0.4
     - monad-control >= 1.0.2.3 && < 1.0.3
     - mtl >= 2.2.2 && < 2.3
