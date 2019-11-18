@@ -7,11 +7,9 @@
 module Effect.Log.Impl
     ( Function
     , HasLog(..)
-    , makeLoggerSet
-    , makeLogFunction
     ) where
 
-import           Control.Monad (when)
+import           Control.Monad ((>=>), when)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
@@ -22,25 +20,21 @@ import           Formatting ((%))
 import qualified Formatting as F
 import qualified System.Log.FastLogger as FL
 
-{- | This logger set may be used to build a log function or to be passed to wai logging. -}
-makeLoggerSet :: Maybe FilePath -> IO FL.LoggerSet
-makeLoggerSet filePath = maybe FL.newStdoutLoggerSet (flip FL.newFileLoggerSet) filePath bufferSize
-  where
-     -- construct logger sets without buffering (1 byte buffer)
-     bufferSize = 1
-
 -- | Log function, filter entries with appropriate log level.
 type Function = Level -> TL.Text -> IO ()
 
 -- | Provide log function implementation.
 class HasLog m where
     getLogFunction :: m Function
+    setLogFunction :: Function -> m ()
 
 -- implement logging in IO using 'HasLog'
 instance (Monad m, MonadIO m, HasLog m) => LogM m where
     log level msg = do
         logFunction <- getLogFunction
         liftIO $ logFunction level msg
+    init minLogLevel = liftIO . makeLoggerSet
+        >=> (liftIO . makeLogFunction minLogLevel) >=> setLogFunction
 
 -- display log level without Show instance because we want to avoid Prelude String
 -- error only happens if code is inconsistent
@@ -55,7 +49,16 @@ formatStr level msg formattedTime = FL.toLogStr $
              (T.decodeUtf8 formattedTime)
              msg
 
--- | Make log function from logger set.
+-- This logger set may be used to build a log function or to be passed to wai logging.
+makeLoggerSet :: LogDestination -> IO FL.LoggerSet
+makeLoggerSet = \case
+    StdOut -> liftIO $ FL.newStdoutLoggerSet bufferSize
+    File filePath -> liftIO $ FL.newFileLoggerSet bufferSize filePath
+  where
+     -- construct logger sets without buffering (1 byte buffer)
+     bufferSize = 1
+
+-- Make log function from logger set.
 makeLogFunction :: Level -> FL.LoggerSet -> IO Function
 makeLogFunction minLogLevel loggerSet =
     -- use time cache because getting and formatting time is expensive

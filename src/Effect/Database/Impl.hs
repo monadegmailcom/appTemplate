@@ -3,8 +3,8 @@
 {- | Database effect implementation. -}
 module Effect.Database.Impl
     ( Exception(..)
-    , HasDatabase(..)
     , Redis(..)
+    , RedisM(..)
     , runRedis
     ) where
 
@@ -16,39 +16,41 @@ import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.ByteString.Char8 as BS
 import qualified Database.Redis as Redis
 import           Effect.Database
--- import qualified Time.Unit
+import           Effect.Database.Init
 
 -- | Implementations of database operations.
-data Redis = Redis { redisConnection :: !Redis.Connection
+data Redis = Redis { redisConnection :: !(STM.TVar Redis.Connection)
                    , redisConfig :: !Config.Redis
                    }
 
--- | Provide Redis implementation.
-class HasDatabase m where
-    getRedis :: m (STM.TVar Redis) -- ^ Get redis implementation.
+class RedisM m where
+    get :: m Redis
+    set :: Redis -> m ()
 
-instance (Monad m, E.MonadThrow m, E.MonadCatch m, MonadIO m, HasDatabase m) => DatabaseM m where
+instance (Monad m, E.MonadThrow m, E.MonadCatch m, MonadIO m, RedisM m) => DatabaseM m where
     getByKey = runRedis . Redis.get
     setByKey key value = runRedis (Redis.set key value) >>= \case
         Redis.Ok -> return ()
         status -> E.throw . Exception . Redis.Error . BS.pack . show $ status
 
+instance (Monad m, E.MonadThrow m, MonadIO m, RedisM m) => InitM m where
+    init config = do
+        connection <- liftIO $ Redis.connect (Config.redisConnectInfo config) >>= STM.newTVarIO
+        set $ Redis connection config
+
 -- | Wrap Redis.Reply in exception.
 newtype Exception = Exception Redis.Reply deriving (Eq, Show, E.Exception)
 
 -- | Run redis action and retry once on failure.
-runRedis :: (E.MonadThrow m, E.MonadCatch m, HasDatabase m, MonadIO m)
+runRedis :: (E.MonadThrow m, E.MonadCatch m, RedisM m, MonadIO m)
          => Redis.Redis (Either Redis.Reply a) -> m a
-runRedis action = getRedis >>= retryOnce reconnect . liftIO . run
-                           >>= throwOnLeft
+runRedis action = get >>= retryOnce reconnect . liftIO . run
+                      >>= throwOnLeft
   where
-    run = STM.readTVarIO >=> flip Redis.runRedis action . redisConnection
+    run = STM.readTVarIO . redisConnection >=> flip Redis.runRedis action
     reconnect _ = do
-        tvar <- getRedis
-        connection <- (liftIO . STM.readTVarIO) tvar
-                  >>= liftIO . Redis.connect . Config.redisConnectInfo . redisConfig
-        liftIO . STM.atomically . STM.modifyTVar tvar
-            $ (\redis -> redis { redisConnection = connection })
+        Redis connection (Config.Redis connectInfo) <- get
+        liftIO $ Redis.connect connectInfo >>= STM.atomically . STM.writeTVar connection
 
 -- execute action, handle exception (if any) and retry once
 retryOnce :: E.MonadCatch m => (E.SomeException -> m ()) -> m a -> m a

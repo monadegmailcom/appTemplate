@@ -27,40 +27,5 @@ data IniFileException = IniFileException String deriving (Show, E.Exception)
 
 -- entry point, start application from IO
 main :: IO ()
-main = do
-           -- parse command line for config file
-    content <- CmdLine.parseCommandLineOptions
-           -- read config file accordingly
-       >>= T.readFile . CmdLine.cmdLineConfigFile
-           -- parse config file syntactically to ini type
-    -- parse configuration semantically from ini type
-    (config, prettyContent) <-
-        either (E.Safe.throwM . IniFileException) return . Config.parseIniFile $ content
-    -- build logger from configuration
-    logger <- let Config.Log mPath logLevel = Config.configLog config
-              in Log.makeLoggerSet mPath >>= Log.makeLogFunction logLevel
-    -- define environment with effect implementations
-    env <- do
-        state <- State.defaultState
-        let redisConfig = Config.configRedis config
-        redisConnection <- (Redis.connect . Config.redisConnectInfo $ redisConfig)
-        redis <- STM.newTVarIO $ Database.Redis redisConnection redisConfig
-        return $ App.Impl.Env logger state redis
-    flip runReaderT env $ do
-        -- log current (read-only) configuration from pretty printed ini type
-        Log.info . F.format ("Initial configuration\n" % F.stext) $ prettyContent
-        -- termination signals should be thrown as async exception to main thread
-        liftIO C.myThreadId >>= App.Impl.installSignalHandlers
-        -- log greeting message with version info
-        Log.info . F.format ("Startup version " % F.string) $ Version.showVersion Paths.version
-        -- test redis connection on startup
-        Log.info "Ping redis connection.."
-        Database.runRedis Redis.ping >>= Log.info . F.format ("Redis reply: " % F.shown)
-        -- the application is up and running now
-        Log.info "Application initialized"
-        -- call pollers forever and log goodbye message finally
-        -- if this thread receives as async exception all pollers are cancelled
-        -- if either poller throws an exception all sibling pollers are cancelled
-        control $ \runInIO -> E.finally (runInIO App.Impl.runPollers)
-                                        (runInIO $ Log.info "Shutdown complete")
+main = App.Impl.initializeEnv >>= runReaderT (App.Impl.app "")
 

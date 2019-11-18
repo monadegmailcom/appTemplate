@@ -48,7 +48,7 @@ instance Eq Redis.ConnectInfo
 
 -- | Logging configuration.
 data Log = Log
-    { logFile :: !(Maybe FilePath) -- ^ log to stdout if Nothing
+    { logFile :: !Log.LogDestination -- ^ log to stdout or file
     , logLevel :: !Log.Level -- ^ filter messages with minimum level
     } deriving (Eq, Show)
 
@@ -57,9 +57,11 @@ parseFromIni :: Ini.Ini -> Either String Config
 parseFromIni ini = do
     logger <- do
         let section = "Log"
-        let mPath = T.unpack <$> lookupOptional section "path"
+        let destination = case T.unpack <$> lookupOptional section "path" of
+                Nothing -> Log.StdOut
+                Just path -> Log.File path
         level <- lookupMandatory section "level" >>= toLogLevel
-        return $ Log mPath level
+        return $ Log destination level
     redis <- do
         let section = "Redis"
         mConnectTimeout <- maybe (Right Nothing)

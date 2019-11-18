@@ -12,7 +12,6 @@ import qualified Control.Concurrent.STM as STM
 import qualified Control.Exception as E
 import           Control.Monad ((>=>))
 import           Control.Monad.Reader (runReaderT)
-import           Control.Monad.Trans.Control (control)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Text as T
@@ -33,10 +32,14 @@ import qualified System.Process as Process
 import           Test.Hspec
 import qualified Time.Units
 
+-- test context
+data Context = Context { ctxEnv :: App.Impl.Env
+                       , ctxLogSink :: C.MVar [(Log.Level,TL.Text)]
+                       , ctxRedisProcessHandle :: C.MVar Process.ProcessHandle }
+
 spec :: Spec
 spec = context "App" $
         context "with valid config" $ beforeAll setup . afterAll cleanup $
---            context "with redis connect at startup failed" $
             context "with application started" $ beforeWith startApplication $
                 context "with USR1 and INT signals sent" $ beforeWith
                     (\ctx -> mapM_ PS.raiseSignal [PS.sigUSR1, PS.sigINT] >> return ctx) $
@@ -56,17 +59,10 @@ spec = context "App" $
         reverse <$> C.readMVar logSink
     startApplication ctx = do
         -- start application asynchronously
-        appAsync <- flip runReaderT (ctxEnv ctx) $ do
-            async <- control $ \runInIO -> CA.async $ runInIO App.Impl.runPollers
-            App.Impl.installSignalHandlers . CA.asyncThreadId $ async
-
-            return async
+        appAsync <- CA.async $ runReaderT (App.Impl.app "") (ctxEnv ctx)
+        -- wait some time for the app to start properly and the signalhandlers are installed
+        Time.Units.threadDelay $ Time.Units.sec 0.1
         return (ctxLogSink ctx, appAsync)
-
--- test context
-data Context = Context { ctxEnv :: App.Impl.Env
-                       , ctxLogSink :: C.MVar [(Log.Level,TL.Text)]
-                       , ctxRedisProcessHandle :: C.MVar Process.ProcessHandle }
 
 -- setup context
 setup :: IO Context
@@ -79,8 +75,9 @@ setup = do
     let redisConfig = Config.configRedis config
     processHandle <- startRedis (Config.redisConnectInfo redisConfig) >>= C.newMVar
     redis <- do
-        redisConnection <- Redis.checkedConnect . Config.redisConnectInfo $ redisConfig
-        STM.newTVarIO $ Database.Impl.Redis redisConnection redisConfig
+        redisConnection <- Redis.checkedConnect (Config.redisConnectInfo redisConfig)
+                            >>= STM.newTVarIO
+        return $ Database.Impl.Redis redisConnection redisConfig
     logSink <- C.newMVar []
     state <- State.defaultState
     let env = App.Impl.Env (Mock.Environment.createLogFunction logSink) state redis

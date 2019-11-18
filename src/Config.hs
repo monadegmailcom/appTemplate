@@ -11,7 +11,7 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Ini as Ini
 import qualified Data.Text as T
 
--- | Parse ini file semantically.
+-- | Parse ini file semantically, return additionally a pretty printed ini file.
 parseIniFile :: T.Text -> Either String (Config, T.Text)
 parseIniFile content = do
     ini <- Ini.parseIni content
