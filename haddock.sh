@@ -1,4 +1,4 @@
 #!/bin/bash
 
-stack build --haddock --no-haddock-deps
+stack haddock --fast --no-haddock-deps
 

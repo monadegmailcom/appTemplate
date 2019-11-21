@@ -1,8 +1,5 @@
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-
-{- | Command line parsing implementation. -}
-module Effect.CmdLine.Impl
-    () where
+{- | Command line effect implementation. -}
+module Effect.CmdLine.Impl () where
 
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.Version as Version

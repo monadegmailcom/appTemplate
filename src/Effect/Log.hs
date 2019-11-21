@@ -1,7 +1,7 @@
 {- | Logging effect. -}
 module Effect.Log
     ( Level(..)
-    , LogDestination(..)
+    , Destination(..)
     , LogM(..)
     , levels
     , debug
@@ -26,13 +26,12 @@ levels =
     , (Error, "Error")
     ]
 
--- | Log to stdout or file
-data LogDestination = StdOut | File FilePath deriving (Eq, Show)
+-- | Log to stdout or file.
+data Destination = StdOut | File FilePath deriving (Eq, Show)
 
 -- | Logging effect.
 class Monad m => LogM m where
     log :: Level -> TL.Text -> m () -- ^ Log msg with level.
-    init :: Level -> LogDestination -> m () -- ^ Log destination, call before logging.
 
 -- | Log debug level.
 debug :: LogM m => TL.Text -> m ()

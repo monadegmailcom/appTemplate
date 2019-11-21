@@ -1,6 +1,4 @@
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-
-{- | Internal implementation for unit tests. -}
+{- | Internal implementation exported for unit tests. -}
 module Config.Internal
     ( Config(..)
     , Log(..)
@@ -27,6 +25,12 @@ data Config = Config
     , configRedis :: !Redis
     } deriving (Eq, Show)
 
+-- | Logging configuration.
+data Log = Log
+    { logFile :: !Log.Destination -- ^ log to stdout or file
+    , logLevel :: !Log.Level -- ^ filter messages with minimum level
+    } deriving (Eq, Show)
+
 -- | Redis configuration.
 newtype Redis = Redis
     { redisConnectInfo :: Redis.ConnectInfo
@@ -46,18 +50,12 @@ instance Eq Redis.ConnectInfo
               && _lhs7 == _rhs7
         _ == _ = False
 
--- | Logging configuration.
-data Log = Log
-    { logFile :: !Log.LogDestination -- ^ log to stdout or file
-    , logLevel :: !Log.Level -- ^ filter messages with minimum level
-    } deriving (Eq, Show)
-
 -- | Parse ini file semantically.
 parseFromIni :: Ini.Ini -> Either String Config
 parseFromIni ini = do
     logger <- do
         let section = "Log"
-        let destination = case T.unpack <$> lookupOptional section "path" of
+            destination = case T.unpack <$> lookupOptional section "path" of
                 Nothing -> Log.StdOut
                 Just path -> Log.File path
         level <- lookupMandatory section "level" >>= toLogLevel

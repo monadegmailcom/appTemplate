@@ -13,6 +13,5 @@ data CommandLineOptions = CommandLineOptions
 
 -- | Command line effect.
 class Monad m => CmdLineM m where
-    -- | Parse command line options
     parseCommandLineOptions :: m CommandLineOptions
 

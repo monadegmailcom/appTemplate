@@ -56,7 +56,7 @@ spec = context "Config" $
                                                 , Redis.connectPort = Redis.PortNumber 8888
                                                 , Redis.connectAuth = Just "secretpwd"
                                                 , Redis.connectTimeout = Just 10.5 }
-    validConfig = Config.Config (Config.Log (Just "out.log") Log.Info)
+    validConfig = Config.Config (Config.Log (Log.File "out.log") Log.Info)
                                 (Config.Redis validConnectInfo)
     validArgs = ["-c", fixturesDir <> "valid.ini"]
     fixturesDir = "test/fixtures/"

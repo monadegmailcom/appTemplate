@@ -1,4 +1,4 @@
-{- | Database initialize effect -}
+{- | Database initialize effect. -}
 module Effect.Database.Init
     ( InitM(..)) where
 
@@ -6,5 +6,5 @@ import qualified Config
 
 -- | Database initialize effect.
 class Monad m => InitM m where
-    init :: Config.Redis -> m ()
+    init :: Config.Redis -> m () -- ^ Initialize with redis configuration.
 

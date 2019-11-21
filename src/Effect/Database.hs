@@ -1,8 +1,7 @@
-{- | Database effect -}
+{- | Database effect. -}
 module Effect.Database
     ( DatabaseM(..) ) where
 
-import qualified Config
 import qualified Data.ByteString as BS
 
 -- | Database effect.
