@@ -2,9 +2,10 @@
 
 module Tests.ExceptionSpec (spec) where
 
+import qualified Effect.Database as Database
+
 import qualified Control.Exception.Safe as E
 import qualified Data.ByteString as BS
-import qualified Effect.Database as Database
 import           Test.Hspec
 
 -- trivial synchronous exception throwing implementation

@@ -7,6 +7,7 @@ module Config
     ) where
 
 import           Config.Internal
+
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Ini as Ini
 import qualified Data.Text as T

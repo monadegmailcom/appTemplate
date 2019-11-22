@@ -3,8 +3,6 @@ module App.Impl
     ( defaultResource
     ) where
 
-import qualified Control.Concurrent as C
-import           Control.Monad.Reader (ReaderT, asks)
 import           Effect.CmdLine.Impl ()
 import qualified Effect.Database.Impl.Redis as Redis
 import           Effect.Filesystem.Impl ()
@@ -12,6 +10,9 @@ import qualified Effect.Log.Impl.FastLogger as FastLogger
 import           Effect.Signal.Impl ()
 import qualified Effect.State.Impl as State
 import           Effect.Thread.Impl ()
+
+import qualified Control.Concurrent as C
+import           Control.Monad.Reader (ReaderT, asks)
 
 {- | The application resources for effect implementations. -}
 data Resource = Resource

@@ -5,9 +5,10 @@ module Effect.State.Impl
     , defaultResource
     ) where
 
+import           Effect.State
+
 import qualified Control.Concurrent.STM as STM
 import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Effect.State
 
 -- | The application state resource.
 newtype Resource = Resource

@@ -1,11 +1,12 @@
 module Tests.LogSpec (spec) where
 
-import qualified Control.Concurrent as C
-import           Control.Monad.Reader (ReaderT, ask, runReaderT)
-import           Control.Monad.Trans.Control (control)
 import qualified Effect.Log as Log
 import qualified Effect.Log.Init as Log
 import qualified Effect.Log.Impl.FastLogger as FastLogger
+
+import qualified Control.Concurrent as C
+import           Control.Monad.Reader (ReaderT, ask, runReaderT)
+import           Control.Monad.Trans.Control (control)
 import qualified System.IO.Silently as Silently
 import           Test.Hspec
 import qualified Test.Hspec.Expectations.Lifted as L

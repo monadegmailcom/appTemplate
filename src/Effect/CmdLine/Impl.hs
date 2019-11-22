@@ -1,9 +1,10 @@
 {- | Command line effect implementation. -}
 module Effect.CmdLine.Impl () where
 
+import           Effect.CmdLine
+
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.Version as Version
-import           Effect.CmdLine
 import qualified Paths_appTemplate as Paths
 import           System.Console.CmdArgs ((&=))
 import qualified System.Console.CmdArgs as CA

@@ -5,25 +5,28 @@ module Tests.AppSpec  where
 
 import qualified App
 import qualified Config
+import qualified Effect.CmdLine as CmdLine
+import qualified Effect.CmdLine.Impl as CmdLine ()
+import qualified Effect.Database.Impl.Redis as Redis
+import qualified Effect.Database.Init as Database
+import qualified Effect.Filesystem.Impl ()
+import qualified Effect.Log as Log
+import qualified Effect.Log.Impl.List as List
+import           Effect.Signal.Impl ()
+import qualified Effect.State.Impl as State
+import           Effect.Thread.Impl ()
+
 import qualified Control.Concurrent as C
 import qualified Control.Concurrent.Async as CA
 import qualified Control.Exception as E
 import           Control.Monad ((>=>))
+import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader (asks, runReaderT, ReaderT)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Database.Redis as Redis
-import qualified Effect.CmdLine as CmdLine
-import qualified Effect.CmdLine.Impl as CmdLine ()
-import qualified Effect.Database.Impl.Redis as Impl.Redis
-import qualified Effect.Filesystem.Impl ()
-import qualified Effect.Log as Log
-import qualified Effect.Log.Impl.List as Impl.List
-import           Effect.Signal.Impl ()
-import qualified Effect.State.Impl as State.Impl
-import           Effect.Thread.Impl ()
 import qualified GHC.IO.Handle as Handle
 import qualified Network.Socket as Socket
 import qualified System.Environment
@@ -33,19 +36,32 @@ import           Test.Hspec
 import qualified Time.Units
 
 -- test context
-data Env = Env { envState :: State.Impl.Resource
-               , envLog :: C.MVar Impl.List.Resource
-               , envRedis :: C.MVar Impl.Redis.Resource
+data Env = Env { envState :: State.Resource
+               , envLog :: C.MVar List.Resource
+               , envRedis :: C.MVar Redis.Resource
                , envConfigPath :: FilePath
                , envRedisProcessHandle :: C.MVar Process.ProcessHandle
                , envAppAsync :: Maybe (CA.Async ())
+               , envPortNumber :: Socket.PortNumber
                }
 
 type App = ReaderT Env IO
 
-instance Impl.List.HasResource App where getResource = asks envLog
-instance State.Impl.HasResource App where getResource = asks envState
-instance Impl.Redis.HasResource App where getResource = asks envRedis
+instance List.HasResource App where getResource = asks envLog
+instance State.HasResource App where getResource = asks envState
+instance Redis.HasResource App where getResource = asks envRedis
+
+-- overwrite database redis initialization with port patched by a dynamically requested free port
+instance {-# OVERLAPS #-} Database.InitM App where
+    init config = do
+        -- patch redis connect info with free port
+        portNumber <- asks envPortNumber
+        let patchedConfig =
+                config { Config.redisConnectInfo = (Config.redisConnectInfo config)
+                             { Redis.connectPort = Redis.PortNumber portNumber }}
+
+        connection <- liftIO $ Redis.checkedConnect (Config.redisConnectInfo patchedConfig)
+        asks envRedis >>= liftIO . (`C.putMVar` Redis.Resource connection patchedConfig)
 
 spec :: Spec
 spec = context "App" $
@@ -64,10 +80,10 @@ spec = context "App" $
   where
     waitForApplicationDone env = do
         -- wait for application to finish
-        CA.wait (fromMaybe (error "Async not set") $ envAppAsync env) 
+        CA.wait (fromMaybe (error "Async not set") $ envAppAsync env)
             `shouldThrow` isJust @E.SomeAsyncException . E.fromException
         -- return log entries in chronological order
-        reverse . Impl.List.resourceSink <$> C.readMVar (envLog env)
+        reverse . List.resourceSink <$> C.readMVar (envLog env)
     startApplication env = do
         -- start application asynchronously
         appAsync <- CA.async . System.Environment.withArgs ["-c", envConfigPath env]
@@ -76,31 +92,29 @@ spec = context "App" $
         Time.Units.threadDelay $ Time.Units.sec 0.1
         CA.poll appAsync >>= \case
             Nothing -> return ()
-            Just e -> Impl.List.resourceSink <$> C.readMVar (envLog env) >>= print 
+            Just e -> List.resourceSink <$> C.readMVar (envLog env) >>= print
                    >> error (show e)
         return $ env { envAppAsync = Just appAsync }
 
 -- setup environment
 setup :: IO Env
 setup = do
-    --port <- getFreePort
-    config <- System.Environment.withArgs ["-c", filePath] $
-                     CmdLine.parseCommandLineOptions
-                 >>= T.readFile . CmdLine.cmdLineConfigFile
-                 >>= either error (return . fst) . Config.parseIniFile
---                 >>= either error (return . patchPort port . fst) . Config.parseIniFile
-    let redisConfig = Config.configRedis config
-    processHandle <- startRedis (Config.redisConnectInfo redisConfig) >>= C.newMVar
-    state <- State.Impl.defaultResource
+    port <- getFreePort
+    processHandle <- do
+        config <- System.Environment.withArgs ["-c", filePath] $
+                         CmdLine.parseCommandLineOptions
+                     >>= T.readFile . CmdLine.cmdLineConfigFile
+                     >>= either error (return . fst) . Config.parseIniFile
+        -- patch redis connect info with free port
+        let redisConnectInfo = (Config.redisConnectInfo . Config.configRedis $ config)
+                { Redis.connectPort = Redis.PortNumber port }
+        startRedisServer redisConnectInfo >>= C.newMVar
+    state <- State.defaultResource
     redis <- C.newEmptyMVar
     log' <- C.newEmptyMVar
-    return $ Env state log' redis filePath processHandle Nothing
+    return $ Env state log' redis filePath processHandle Nothing port
   where
     filePath = "test/fixtures/valid.ini"
---    patchPort port config = let redis = Config.configRedis config
---                                ci = (Config.redisConnectInfo redis)
---                                         { Redis.connectPort = Redis.PortNumber port }
---                            in config { Config.configRedis = Config.Redis ci }
 
 -- cleanup context
 cleanup :: Env -> IO ()
@@ -118,8 +132,8 @@ getFreePort = E.bracket (Socket.socket Socket.AF_INET Socket.Stream Socket.defau
   where
     address = Socket.SockAddrInet 0 $ Socket.tupleToHostAddress (127, 0, 0, 1)
 
-startRedis :: Redis.ConnectInfo -> IO Process.ProcessHandle
-startRedis connectInfo = do
+startRedisServer :: Redis.ConnectInfo -> IO Process.ProcessHandle
+startRedisServer connectInfo = do
     -- start redis process on free port and redirect stdout to a pipe
     (mInHandle, mOutHandle, _, processHandle) <- Process.createProcess $
          process { Process.std_out = Process.CreatePipe, Process.std_in = Process.CreatePipe }
@@ -128,7 +142,6 @@ startRedis connectInfo = do
             configStr = case Redis.connectPort connectInfo of
                             Redis.PortNumber port -> "port " ++ show port ++ "\n"
                             _ -> error "no port defined"
-                        ++ "bind " ++ Redis.connectHost connectInfo ++ "\n"
                         ++ maybe "" (("requirepass " ++) . BS.unpack) (Redis.connectAuth connectInfo)
         Handle.hPutStr inHandle configStr
         Handle.hClose inHandle -- the redis server starts when stdin closes

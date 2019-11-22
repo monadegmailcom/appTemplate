@@ -6,6 +6,8 @@ module Config.Internal
     , parseFromIni
     ) where
 
+import qualified Effect.Log as Log
+
 import           Data.Bifunctor (first)
 import qualified Data.CaseInsensitive as CI
 import qualified Data.HashMap.Strict as HashMap
@@ -15,7 +17,6 @@ import qualified Data.List as L
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Database.Redis as Redis
-import qualified Effect.Log as Log
 import           Formatting ((%))
 import qualified Formatting as F
 

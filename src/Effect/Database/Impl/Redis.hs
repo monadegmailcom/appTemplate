@@ -6,6 +6,10 @@ module Effect.Database.Impl.Redis
     ) where
 
 import qualified Config
+import qualified Effect.Log as Log
+import           Effect.Database
+import           Effect.Database.Init
+
 import qualified Control.Concurrent as C
 import qualified Control.Exception.Safe as E
 import           Control.Monad ((>=>))
@@ -13,9 +17,6 @@ import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text.Lazy as TL
 import qualified Database.Redis as Redis
-import qualified Effect.Log as Log
-import           Effect.Database
-import           Effect.Database.Init
 
 -- | Database resource.
 data Resource = Resource { resourceConnection :: !Redis.Connection -- ^ Redis connection.

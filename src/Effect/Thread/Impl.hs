@@ -2,12 +2,13 @@
 module Effect.Thread.Impl
     () where
 
+import           Effect.Thread
+
 import qualified Control.Concurrent as C
 import qualified Control.Concurrent.Async as CA
 import qualified Control.Exception.Safe as E
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.Trans.Control (MonadBaseControl, StM, control, liftBaseWith, restoreM)
-import           Effect.Thread
 import qualified Time.Units
 
 instance (Monad m, MonadIO m, MonadBaseControl IO m, StM m () ~ ()) => ThreadM m where

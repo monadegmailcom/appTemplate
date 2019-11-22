@@ -4,14 +4,7 @@
      other than those provided by effect constraints are allowed. -}
 module App ( app ) where
 
-import qualified Poll
 import qualified Config
-import qualified Control.Concurrent as C
-import qualified Control.Exception as E (AsyncException( UserInterrupt))
-import qualified Control.Exception.Safe as E
-import           Control.Monad (forever, void)
-import qualified Data.Text.Lazy as TL
-import qualified Data.Version as Version
 import qualified Effect.CmdLine as CmdLine
 import qualified Effect.Database as Database
 import qualified Effect.Database.Init as Database
@@ -21,6 +14,14 @@ import qualified Effect.Log.Init as Log
 import qualified Effect.Signal as Signal
 import qualified Effect.State as State
 import qualified Effect.Thread as Thread
+import qualified Poll
+
+import qualified Control.Concurrent as C
+import qualified Control.Exception as E (AsyncException( UserInterrupt))
+import qualified Control.Exception.Safe as E
+import           Control.Monad (forever, void)
+import qualified Data.Text.Lazy as TL
+import qualified Data.Version as Version
 import           Formatting ((%))
 import qualified Formatting as F
 import qualified Paths_appTemplate as Paths
@@ -53,7 +54,7 @@ app = do
                     CmdLine.parseCommandLineOptions
                 >>= annotate "Read config file" . Filesystem.readFile . CmdLine.cmdLineConfigFile
                 >>= either (E.throwM . AppException . ("Parse config file: " <>))
-                           return . Config.parseIniFile
+                           return . Config.parseIniFile . TL.toStrict
         let Config.Log logDestination logLevel = Config.configLog config
         annotate "Init logging" $ Log.init logLevel logDestination
         -- log redacted configuration

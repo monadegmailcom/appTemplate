@@ -7,6 +7,9 @@ module Effect.Log.Impl.FastLogger
     , Resource(..)
     ) where
 
+import           Effect.Log
+import           Effect.Log.Init
+
 import qualified Control.Concurrent as C
 import           Control.Monad (when)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
@@ -14,8 +17,6 @@ import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as TL
-import           Effect.Log
-import           Effect.Log.Init
 import           Formatting ((%))
 import qualified Formatting as F
 import qualified System.Log.FastLogger as FL

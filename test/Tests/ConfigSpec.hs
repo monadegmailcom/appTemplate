@@ -5,6 +5,10 @@ module Tests.ConfigSpec (spec) where
 
 import qualified Config
 import qualified Config.Internal
+import qualified Effect.CmdLine as CmdLine
+import qualified Effect.CmdLine.Impl as CmdLine ()
+import qualified Effect.Log as Log
+
 import           Data.Either (isRight)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Ini as Ini
@@ -12,9 +16,6 @@ import qualified Data.List as List
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Database.Redis as Redis
-import qualified Effect.CmdLine as CmdLine
-import qualified Effect.CmdLine.Impl as CmdLine ()
-import qualified Effect.Log as Log
 import qualified System.Environment
 import           Test.Hspec
 

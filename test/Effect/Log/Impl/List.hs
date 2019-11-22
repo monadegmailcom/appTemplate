@@ -3,11 +3,12 @@ module Effect.Log.Impl.List
     , Resource(..)
     ) where
 
+import           Effect.Log
+import           Effect.Log.Init
+
 import qualified Control.Concurrent as C
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.Text.Lazy as TL
-import           Effect.Log
-import           Effect.Log.Init
 
 data Resource = Resource { resourceSink :: [(Level, TL.Text)]
                          , resourceMinLogLevel :: Level
