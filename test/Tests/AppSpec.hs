@@ -19,12 +19,14 @@ import           Effect.Thread.Impl ()
 import qualified Control.Concurrent as C
 import qualified Control.Concurrent.Async as CA
 import qualified Control.Exception as E
-import           Control.Monad ((>=>))
+import           Control.Monad ((>=>), void)
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader (asks, runReaderT, ReaderT)
+import           Data.Bifunctor (first)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.Text.IO as T
 import qualified Database.Redis as Redis
 import qualified GHC.IO.Handle as Handle
@@ -43,6 +45,7 @@ data Env = Env { envState :: State.Resource
                , envRedisProcessHandle :: C.MVar Process.ProcessHandle
                , envAppAsync :: Maybe (CA.Async ())
                , envPortNumber :: Socket.PortNumber
+               , envHost :: Maybe String
                }
 
 type App = ReaderT Env IO
@@ -54,46 +57,100 @@ instance Redis.HasResource App where getResource = asks envRedis
 -- overwrite database redis initialization with port patched by a dynamically requested free port
 instance {-# OVERLAPS #-} Database.InitM App where
     init config = do
-        -- patch redis connect info with free port
+        -- patch redis connect info with port and host
         portNumber <- asks envPortNumber
-        let patchedConfig =
-                config { Config.redisConnectInfo = (Config.redisConnectInfo config)
-                             { Redis.connectPort = Redis.PortNumber portNumber }}
+        mHost <- asks envHost
+        let patchedConfig = config
+                { Config.redisConnectInfo = (Config.redisConnectInfo config)
+                    { Redis.connectPort = Redis.PortNumber portNumber
+                    , Redis.connectHost = fromMaybe (Redis.connectHost . Config.redisConnectInfo
+                                                        $ config) mHost
+                    }}
 
         connection <- liftIO $ Redis.checkedConnect (Config.redisConnectInfo patchedConfig)
         asks envRedis >>= liftIO . (`C.putMVar` Redis.Resource connection patchedConfig)
 
 spec :: Spec
 spec = context "App" $
-    context "with valid config" $ beforeAll setup . afterAll cleanup $
-        context "with application started" $ beforeWith startApplication $
-            context "with USR1 and INT signals sent" $ beforeWith
-                (\env -> mapM_ PS.raiseSignal [PS.sigUSR1, PS.sigINT] >> return env) $
-                context "with application shutdown" $ beforeWith waitForApplicationDone $
-                    it "logs as expected" $ \logEntries -> do
-                        -- see http://man7.org/linux/man-pages/man7/signal.7.html
-                        logEntries `shouldSatisfy` ((Log.Info, "Caught signal 10, ignore") `elem`)
-                        -- note: we expect "U ..done" to follow termination signal because
-                        -- this event is uninterruptable
-                        dropWhile (/= (Log.Info, "Caught signal 2, terminate")) logEntries
-                            `shouldSatisfy` ((Log.Info, "U ..done") `elem`)
+    context "with environment set up" $ beforeAll setup . afterAll cleanup $ do
+        context "with config file not found" -- invalidate config path
+            $ beforeWith (\env -> return $ env { envConfigPath = "invalidPath" }) $
+            context "with application started" $ beforeWith startApplication $
+                context "with application finished" $ beforeWith waitForApplicationDone $
+                    it "cannot log" $ \(asyncResult, logEntries) -> do
+                        first E.fromException asyncResult `shouldBe` Left (Just $ App.AppException
+                            "Read config file: invalidPath: openFile: does not exist \
+                            \(No such file or directory)")
+                        logEntries `shouldSatisfy` null
+        context "with invalid config file format"
+            $ beforeWith (\env -> return $ env { envConfigPath = "test/fixtures/invalid.ini" }) $
+            context "with application started" $ beforeWith startApplication $
+                context "with application finished" $ beforeWith waitForApplicationDone $
+                    it "cannot log" $ \(asyncResult, logEntries) -> do
+                        first E.fromException asyncResult `shouldBe` Left (Just $ App.AppException
+                            "Parse config file: Couldn't find key: Log.level")
+                        either (maybe "" (\(App.AppException msg) -> msg) . E.fromException)
+                               (const "")
+                               asyncResult
+                           `shouldStartWith` "Parse config file:"
+                        logEntries `shouldSatisfy` null
+        context "with invalid redis port" -- invalidate port number
+             $ beforeWith (\env -> return $ env { envPortNumber = envPortNumber env + 1 }) $
+            context "with application started" $ beforeWith startApplication $
+                context "with application finished" $ beforeWith waitForApplicationDone $
+                    it "stopped logging after startup message" $ \(asyncResult, logEntries) -> do
+                        first E.fromException asyncResult `shouldBe` Left (Just $ App.AppException
+                            "Initialize database: Network.Socket.connect: <socket: 15>: \
+                            \does not exist (Connection refused)")
+                        logEntries `shouldSatisfy` (not . null)
+                        (TL.unpack . snd . last) logEntries `shouldStartWith` "Startup "
+        context "with invalid redis host" -- invalidate host
+             $ beforeWith (\env -> return $ env { envHost = Just "unknownHost" }) $
+            context "with application started" $ beforeWith startApplication $
+                context "with application finished" $ beforeWith waitForApplicationDone $
+                    it "stopped logging after startup message" $ \(asyncResult, logEntries) -> do
+                        first E.fromException asyncResult `shouldBe` Left (Just $ App.AppException
+                            "Initialize database: Network.BSD.getHostByName: does not exist \
+                            \(no such host entry)")
+                        logEntries `shouldSatisfy` (not . null)
+                        (TL.unpack . snd . last) logEntries `shouldStartWith` "Startup "
+        context "with valid config" $ beforeWith return $
+            context "with application started" $ beforeWith startApplication $
+                context "with USR1 and INT signals sent" $ beforeWith
+                    (\env -> mapM_ PS.raiseSignal [PS.sigUSR1, PS.sigINT] >> return env) $
+                    context "with application shutdown" $ beforeWith waitForApplicationDone $
+                        it "logs as expected" $ \(asyncResult, logEntries) -> do
+                            asyncResult `shouldSatisfy`
+                                either (isJust @E.SomeAsyncException . E.fromException)
+                                       (return False)
+                            logEntries `shouldSatisfy` (not . null)
+                            (TL.unpack . snd . head) logEntries `shouldStartWith`
+                                "Initial configuration"
+                            (TL.unpack . snd . last) logEntries `shouldBe`
+                                "Shutdown complete"
+                            -- see http://man7.org/linux/man-pages/man7/signal.7.html
+                            logEntries `shouldSatisfy` ((Log.Info, "Caught signal 10, ignore") `elem`)
+                            -- note: we expect "U ..done" to follow termination signal because
+                            -- this event is uninterruptable
+                            dropWhile (/= (Log.Info, "Caught signal 2, terminate")) logEntries
+                                `shouldSatisfy` ((Log.Info, "U ..done") `elem`)
   where
     waitForApplicationDone env = do
         -- wait for application to finish
-        CA.wait (fromMaybe (error "Async not set") $ envAppAsync env)
-            `shouldThrow` isJust @E.SomeAsyncException . E.fromException
+        asyncResult <- E.try @E.SomeException
+                     $ CA.wait (fromMaybe (error "Async not set") $ envAppAsync env)
         -- return log entries in chronological order
-        reverse . List.resourceSink <$> C.readMVar (envLog env)
+        logEntries <- maybe [] (reverse . List.resourceSink) <$> C.tryReadMVar (envLog env)
+        return (asyncResult, logEntries)
     startApplication env = do
+        -- reset resources, otherwise the effect init function would block undefinitely
+        void $ C.tryTakeMVar $ envLog env
+        void $ C.tryTakeMVar $ envRedis env
         -- start application asynchronously
         appAsync <- CA.async . System.Environment.withArgs ["-c", envConfigPath env]
                              $ runReaderT App.app env
         -- wait some time for the app to start properly and the signalhandlers are installed
         Time.Units.threadDelay $ Time.Units.sec 0.1
-        CA.poll appAsync >>= \case
-            Nothing -> return ()
-            Just e -> List.resourceSink <$> C.readMVar (envLog env) >>= print
-                   >> error (show e)
         return $ env { envAppAsync = Just appAsync }
 
 -- setup environment
@@ -112,7 +169,7 @@ setup = do
     state <- State.defaultResource
     redis <- C.newEmptyMVar
     log' <- C.newEmptyMVar
-    return $ Env state log' redis filePath processHandle Nothing port
+    return $ Env state log' redis filePath processHandle Nothing port Nothing
   where
     filePath = "test/fixtures/valid.ini"
 

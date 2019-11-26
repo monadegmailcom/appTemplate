@@ -2,7 +2,9 @@
      Note: the application implementation "app" is running
      in a monad restricted to use only effects from the contraint list, no IO operations
      other than those provided by effect constraints are allowed. -}
-module App ( app ) where
+module App ( AppException(..)
+           , app
+           ) where
 
 import qualified Config
 import qualified Effect.CmdLine as CmdLine
@@ -28,7 +30,7 @@ import qualified Paths_appTemplate as Paths
 import qualified System.Posix.Signals as PS
 
 -- use for exception string annotation
-newtype AppException = AppException String deriving (Show, E.Exception)
+newtype AppException = AppException String deriving (Show, Eq, E.Exception)
 
 -- to annotate exceptions thrown by effect implementations with a semantic context
 annotate :: (E.MonadCatch m) => String -> m a -> m a
