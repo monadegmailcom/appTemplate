@@ -30,7 +30,7 @@ import qualified Paths_appTemplate as Paths
 import qualified System.Posix.Signals as PS
 
 -- use for exception string annotation
-newtype AppException = AppException String deriving (Show, Eq, E.Exception)
+newtype AppException = AppException { exceptionMsg :: String} deriving (Show, Eq, E.Exception)
 
 -- to annotate exceptions thrown by effect implementations with a semantic context
 annotate :: (E.MonadCatch m) => String -> m a -> m a
