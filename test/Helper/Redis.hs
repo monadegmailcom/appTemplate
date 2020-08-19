@@ -47,8 +47,8 @@ startServer connectInfo = do
         Handle.hClose inHandle -- the redis server starts when stdin closes
     do -- wait (with timeout) for redis server to be ready accepting connections
         let outHandle = fromMaybe (error "no out handle") mOutHandle
-        Time.Units.timeout startupTimeout (outHandle `waitFor` "Ready to accept connections")
-            >>= maybe (error "mongod not ready within timeout") return
+        Time.Units.timeout startupTimeout (outHandle `waitFor` "eady to accept connections")
+            >>= maybe (error "redis not ready within timeout") return
     return processHandle
   where
     process = Process.proc "redis-server" ["-"]
