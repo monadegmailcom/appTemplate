@@ -22,6 +22,7 @@ import qualified Control.Concurrent as C
 import qualified Control.Exception as E (AsyncException( UserInterrupt))
 import qualified Control.Exception.Safe as E
 import           Control.Monad (forever, void)
+import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Version as Version
 import           Formatting ((%))
@@ -36,6 +37,11 @@ newtype AppException = AppException { exceptionMsg :: String} deriving (Show, Eq
 annotate :: (E.MonadCatch m) => String -> m a -> m a
 annotate msg action = E.catchAny action (\e -> E.throw . AppException $ msg <> ": " <> show e)
 
+fromEither :: E.MonadThrow m => Either String a -> m a
+fromEither = \case
+    Left msg -> E.throwM $ AppException msg
+    Right x -> return x
+
 {- | Implementation of application logic. Function blocks until application shutdown. -}
 app :: ( E.MonadMask m
        , Thread.ThreadM m
@@ -48,26 +54,38 @@ app :: ( E.MonadMask m
        , State.StateM m
        , Signal.SignalM m)
     => m ()
-app = do
+app = E.handle logAndRethrow $ do
     annotate "Install signal handlers" installSignalHandlers
-    -- parse configuration and initialize logging
-    Config.Config {Config.configRedis} <- do
-        (config, redactedConfigStr) <-
-                    CmdLine.parseCommandLineOptions
-                >>= annotate "Read config file" . Filesystem.readFile . CmdLine.cmdLineConfigFile
-                >>= either (E.throwM . AppException . ("Parse config file: " <>))
-                           return . Config.parseIniFile . TL.toStrict
-        let Config.Log logDestination logLevel = Config.configLog config
-        annotate "Init logging" $ Log.init logLevel logDestination
-        -- log redacted configuration
-        Log.info . F.format ("Initial configuration\n" % F.stext) $ redactedConfigStr
-        return config
+
+    (config, redactedConfigStr) <- getConfig
+
+    --  and initialize logging
+    let Config.Log logDestination logLevel = Config.configLog config
+    annotate "Init logging" $ Log.init logLevel logDestination
+
+    -- log redacted configuration
+    Log.info . F.format ("Initial configuration\n" % F.stext) $ redactedConfigStr
     Log.info . F.format ("Startup version " % F.string) $ Version.showVersion Paths.version
-    annotate "Initialize database" $ Database.init configRedis
+
+    annotate "Initialize database" $ Database.init (Config.configRedis config)
     annotate "Check database connection" $ void $ Database.getByKey "test"
+
     Log.info "Application initialized"
+
     -- call pollers forever and log goodbye message finally
     E.finally runPollers $ Log.info "Shutdown complete"
+
+logAndRethrow :: (E.MonadThrow m, Log.LogM m) => E.SomeException -> m ()
+logAndRethrow e = do
+    -- log is ignored if logging not yet initialized
+    Log.error . TL.pack . show $ e
+    E.throwM e
+
+getConfig :: (E.MonadCatch m, CmdLine.CmdLineM m, Filesystem.FilesystemM m)
+          => m (Config.Config, T.Text)
+getConfig = CmdLine.parseCommandLineOptions
+        >>= annotate "Read config file" . Filesystem.readFile . CmdLine.cmdLineConfigFile
+        >>= annotate "Parse config file" . fromEither . Config.parseIniFile . TL.toStrict
 
 {- Start poller asynchronously. Poller will terminate on asynchronous exceptions.
    If the current thread receives an async exception (e.g. from the signal handlers)
@@ -101,15 +119,15 @@ installSignalHandlers = do
     -- exception is SIGPIPE, which we want to ignore
     terminateSignals = [PS.sigHUP, PS.sigINT, PS.sigALRM, PS.sigTERM]
 
-toStr :: TL.Text -> PS.SignalInfo -> TL.Text
-toStr msg signalInfo =
-    let signal = PS.siginfoSignal signalInfo
-    in F.format ("Caught signal " % F.shown % ", " % F.text) signal msg
+    toStr :: TL.Text -> PS.SignalInfo -> TL.Text
+    toStr msg signalInfo =
+        let signal = PS.siginfoSignal signalInfo
+        in F.format ("Caught signal " % F.shown % ", " % F.text) signal msg
 
-termSignalHandler :: (Log.LogM m, Thread.ThreadM m) => C.ThreadId -> PS.SignalInfo -> m ()
-termSignalHandler threadId signalInfo = do
-    Log.info $ toStr "terminate" signalInfo
-    Thread.throwTo threadId E.UserInterrupt
+    termSignalHandler :: (Log.LogM m, Thread.ThreadM m) => C.ThreadId -> PS.SignalInfo -> m ()
+    termSignalHandler threadId signalInfo = do
+        Log.info $ toStr "terminate" signalInfo
+        Thread.throwTo threadId E.UserInterrupt
 
-usr1SignalHandler :: Log.LogM m => PS.SignalInfo -> m ()
-usr1SignalHandler = Log.info . toStr "ignore"
+    usr1SignalHandler :: Log.LogM m => PS.SignalInfo -> m ()
+    usr1SignalHandler = Log.info . toStr "ignore"

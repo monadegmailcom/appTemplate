@@ -6,8 +6,8 @@ module Effect.Log.Impl.List
 import           Effect.Log
 import           Effect.Log.Init
 
-import qualified Control.Concurrent as C
 import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Data.IORef
 import qualified Data.Text.Lazy as TL
 
 data Resource = Resource { resourceSink :: [(Level, TL.Text)]
@@ -15,16 +15,17 @@ data Resource = Resource { resourceSink :: [(Level, TL.Text)]
                          }
 
 class HasResource m where
-    getResource :: m (C.MVar Resource)
+    getResource :: m (IORef Resource)
 
 instance (Monad m, MonadIO m, HasResource m) => LogM m where
     log level msg = do
-        mvar <- getResource
-        liftIO . C.modifyMVar_ mvar $ \(Resource sink minLogLevel) -> do
+        ioRef <- getResource
+        liftIO . atomicModifyIORef' ioRef $ \(Resource sink minLogLevel) -> do
             let sink' = if level >= minLogLevel
                         then (level, msg) : sink
                         else sink
-            return $ Resource sink' minLogLevel
+            (Resource sink' minLogLevel, ())
 
 instance (Monad m, MonadIO m, HasResource m) => InitM m where
-    init minLogLevel _ = getResource >>= liftIO . flip C.putMVar (Resource [] minLogLevel)
+    init minLogLevel _ =
+        getResource >>= liftIO . flip atomicWriteIORef (Resource [] minLogLevel)

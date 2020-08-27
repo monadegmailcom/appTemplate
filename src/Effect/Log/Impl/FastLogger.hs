@@ -11,7 +11,7 @@ import           Effect.Log
 import           Effect.Log.Init
 
 import qualified Control.Concurrent as C
-import           Control.Monad (when)
+import           Control.Monad (void, when)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
@@ -33,12 +33,14 @@ class HasResource m where
 
 -- implement logging in IO using resource
 instance (Monad m, MonadIO m, HasResource m) => LogM m where
-    log level msg = do
-        Resource loggerSet minLogLevel timeCache <- getResource >>= liftIO . C.readMVar
-        -- skip logging if minimum log level not reached
-        when (level >= minLogLevel) $
-            -- get formatted time from cache
-            liftIO timeCache >>= liftIO . FL.pushLogStrLn loggerSet . formatStr level msg
+    log level msg = getResource >>= liftIO . C.tryReadMVar >>= \case
+        -- just ignore if not initialized
+        Nothing -> return ()
+        Just (Resource loggerSet minLogLevel timeCache) ->
+            -- skip logging if minimum log level not reached
+            when (level >= minLogLevel) $
+                -- get formatted time from cache
+                liftIO timeCache >>= liftIO . FL.pushLogStrLn loggerSet . formatStr level msg
 
 -- initialize resource
 instance (Monad m, MonadIO m, HasResource m) => InitM m where
@@ -48,7 +50,10 @@ instance (Monad m, MonadIO m, HasResource m) => InitM m where
             File filePath -> FL.newFileLoggerSet bufferSize filePath
         -- use time cache because getting and formatting time is expensive
         timeCache <- liftIO $ FL.newTimeCache FL.simpleTimeFormat
-        getResource >>= liftIO . (`C.putMVar` Resource loggerSet minLogLevel timeCache)
+        -- empty mvar if already taken
+        getResource >>= liftIO . void . C.tryTakeMVar
+        -- reset mvar
+        getResource >>= liftIO . void . (`C.tryPutMVar` Resource loggerSet minLogLevel timeCache)
 
 -- construct logger sets without buffering (1 byte buffer)
 bufferSize :: Int

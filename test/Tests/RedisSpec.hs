@@ -16,6 +16,7 @@ import qualified Control.Concurrent as C
 import qualified Control.Exception.Safe as E
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader (asks, runReaderT, ReaderT)
+import           Data.IORef
 import qualified Data.List as List
 import qualified Data.Text.Lazy as TL
 import qualified Database.Redis as R
@@ -27,7 +28,7 @@ import qualified Time.Units
 -- test context
 data Env = Env { envConnectInfo :: R.ConnectInfo
                , envRedis :: C.MVar Redis.Resource
-               , envLog :: C.MVar List.Resource
+               , envLog :: IORef List.Resource
                }
 
 type App = ReaderT Env IO
@@ -64,11 +65,11 @@ spec = context "Redis" $ beforeAll setup $
             Database.getByKey "any" `L.shouldReturn` Nothing
 
 getLog :: App [(Log.Level, TL.Text)]
-getLog = asks envLog >>= fmap (reverse . List.resourceSink) . liftIO . C.readMVar
+getLog = asks envLog >>= fmap (reverse . List.resourceSink) . liftIO . readIORef
 
 setup :: IO Env
 setup = do
     let connectInfo = R.defaultConnectInfo
     port <- Helper.Redis.getFreePort . R.connectHost $ connectInfo
     let patchedConnectInfo = connectInfo { R.connectPort = R.PortNumber port }
-    Env patchedConnectInfo <$> C.newEmptyMVar <*> C.newEmptyMVar
+    Env patchedConnectInfo <$> C.newEmptyMVar <*> newIORef (List.Resource [] Log.Debug)
