@@ -9,10 +9,8 @@ module App ( AppException(..)
 import qualified Config
 import qualified Effect.CmdLine as CmdLine
 import qualified Effect.Database as Database
-import qualified Effect.Database.Init as Database
 import qualified Effect.Filesystem as Filesystem
 import qualified Effect.Log as Log
-import qualified Effect.Log.Init as Log
 import qualified Effect.Signal as Signal
 import qualified Effect.State as State
 import qualified Effect.Thread as Thread
@@ -48,9 +46,7 @@ app :: ( E.MonadMask m
        , CmdLine.CmdLineM m
        , Filesystem.FilesystemM m
        , Log.LogM m
-       , Log.InitM m
-       , Database.DatabaseM m
-       , Database.InitM m
+       , Database.DatabaseM Config.Redis m
        , State.StateM m
        , Signal.SignalM m)
     => m ()
@@ -63,17 +59,19 @@ app = E.handle logAndRethrow $ do
     let Config.Log logDestination logLevel = Config.configLog config
     annotate "Init logging" $ Log.init logLevel logDestination
 
-    -- log redacted configuration
-    Log.info . F.format ("Initial configuration\n" % F.stext) $ redactedConfigStr
     Log.info . F.format ("Startup version " % F.string) $ Version.showVersion Paths.version
 
-    annotate "Initialize database" $ Database.init (Config.configRedis config)
+    -- log redacted configuration
+    Log.info . F.format ("Initial configuration\n" % F.stext) $ redactedConfigStr
+
+    let configRedis = Config.configRedis config
+    annotate "Initialize database" $ Database.connect configRedis
     annotate "Check database connection" $ void $ Database.getByKey "test"
 
     Log.info "Application initialized"
 
     -- call pollers forever and log goodbye message finally
-    E.finally runPollers $ Log.info "Shutdown complete"
+    E.finally (runPollers configRedis) $ Log.info "Shutdown complete"
 
 logAndRethrow :: (E.MonadThrow m, Log.LogM m) => E.SomeException -> m ()
 logAndRethrow e = do
@@ -95,15 +93,15 @@ getConfig = CmdLine.parseCommandLineOptions
    delay termination until next iteration in `forever`. -}
 runPollers :: ( E.MonadMask m
               , Log.LogM m
-              , Database.DatabaseM m
+              , Database.DatabaseM Config.Redis m
               , State.StateM m
               , Thread.ThreadM m)
-           => m ()
-runPollers = Thread.mapConcurrently forever
+           => Config.Redis -> m ()
+runPollers configRedis = Thread.mapConcurrently forever
      [ E.uninterruptibleMask_ $ Poll.pollState "U"
      , Poll.pollState "S"
-     , Poll.pollRedis "R1"
-     , Poll.pollRedis "R2"
+     , Poll.pollRedis configRedis "R1"
+     , Poll.pollRedis configRedis "R2"
      ]
 
 {- Install signal handlers. Terminate signals are transformed to async exception thrown to
