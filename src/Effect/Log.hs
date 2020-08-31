@@ -31,6 +31,7 @@ data Destination = StdOut | File FilePath deriving (Eq, Show)
 
 -- | Logging effect.
 class Monad m => LogM m where
+    init :: Level -> Destination -> m () -- ^ Initialize logging.
     log :: Level -> TL.Text -> m () -- ^ Log msg with level.
 
 -- | Log debug level.

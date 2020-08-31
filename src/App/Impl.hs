@@ -16,15 +16,14 @@ import           Control.Monad.Reader (ReaderT, asks)
 
 {- | The application resources for effect implementations. -}
 data Resource = Resource
-    { resourceLog :: !(C.MVar FastLogger.Resource)
+    { resourceLog :: !(C.MVar (Maybe FastLogger.Resource))
     , resourceState :: !State.Resource
-    , resourceRedis :: !(C.MVar Redis.Resource)
+    , resourceRedis :: !(C.MVar (Maybe Redis.Connection))
     }
 
-{- | Build default resource. Note: some resources must be initialized before usage. E.g. before
-     using "Effect.Database" use "Effect.Database.Init.InitM" for database initialization. -}
+{- | Build default resource. Note: some resources must be initialized before usage. -}
 defaultResource :: IO Resource
-defaultResource = Resource <$> C.newEmptyMVar <*> State.defaultResource <*> C.newEmptyMVar
+defaultResource = Resource <$> C.newMVar Nothing <*> State.defaultResource <*> C.newMVar Nothing
 
 type App = ReaderT Resource IO
 

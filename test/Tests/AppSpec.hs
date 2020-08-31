@@ -8,7 +8,7 @@ import qualified Config
 import qualified Effect.CmdLine as CmdLine
 import qualified Effect.CmdLine.Impl as CmdLine ()
 import qualified Effect.Database.Impl.Redis as Redis
-import qualified Effect.Database.Init as Database
+import qualified Effect.Filesystem as Filesystem
 import qualified Effect.Filesystem.Impl ()
 import qualified Effect.Log as Log
 import qualified Effect.Log.Impl.List as List
@@ -24,9 +24,12 @@ import           Control.Monad ((>=>), void)
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader (asks, runReaderT, ReaderT)
 import           Data.Bifunctor (first)
+import qualified Data.Ini as Ini
+import qualified Data.HashMap.Strict as HashMap
 import           Data.IORef
 import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Text.Lazy as TL
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Database.Redis as R
 import qualified System.Environment
@@ -38,11 +41,11 @@ import qualified Time.Units
 -- test context
 data Env = Env { envState :: State.Resource
                , envLog :: IORef List.Resource
-               , envRedis :: C.MVar Redis.Resource
+               , envRedis :: C.MVar (Maybe Redis.Connection)
                , envConfigPath :: FilePath
                , envRedisProcessHandle :: Process.ProcessHandle
                , envAppAsync :: Maybe (CA.Async ())
-               , envConnectInfo :: R.ConnectInfo
+               , envPatchIni :: Ini.Ini -> Ini.Ini
                }
 
 type App = ReaderT Env IO
@@ -51,14 +54,24 @@ instance List.HasResource App where getResource = asks envLog
 instance State.HasResource App where getResource = asks envState
 instance Redis.HasResource App where getResource = asks envRedis
 
--- overwrite database redis initialization with port patched by a dynamically requested free port
-instance {-# OVERLAPS #-} Database.InitM App where
-    init config = do
-        -- patch connect info
-        connectInfo <- asks envConnectInfo
-        let patchedConfig = config { Config.redisConnectInfo = connectInfo }
-        connection <- liftIO $ R.checkedConnect (Config.redisConnectInfo patchedConfig)
-        asks envRedis >>= liftIO . (`C.putMVar` Redis.Resource connection patchedConfig)
+-- tweak cnnfig
+instance {-# OVERLAPS #-} Filesystem.FilesystemM App where
+    readFile path = do
+        patchIni <- asks envPatchIni
+        ini <- liftIO $ T.readFile path >>= either error return . Ini.parseIni
+        return . TL.fromStrict . Ini.printIni . patchIni $ ini
+
+patchKey :: T.Text -> T.Text -> (T.Text -> T.Text) -> Ini.Ini -> Ini.Ini
+patchKey section key modifyValue =
+    Ini.Ini . HashMap.adjust (HashMap.adjust modifyValue key) section . Ini.unIni
+
+patchPort :: T.Text -> Ini.Ini -> Ini.Ini
+patchPort port = patchKey "Redis" "url" replacePort
+  where
+    replacePort url = T.dropWhileEnd (`elem` (':' : ['0' .. '9'])) url <> ":" <> port
+
+patchHost :: T.Text -> Ini.Ini -> Ini.Ini
+patchHost host = patchKey "Redis" "url" (const host)
 
 spec :: Spec
 spec = context "App" $
@@ -81,8 +94,7 @@ spec = context "App" $
                            asyncResult
                        `shouldStartWith` "Parse config file:"
         context "with invalid redis port" -- invalidate port number
-             $ beforeWith (\env -> return $ env
-                 { envConnectInfo = (envConnectInfo env) { R.connectPort = R.PortNumber 1 }}) $
+             $ beforeWith (\env -> return $ env { envPatchIni = patchPort "1" }) $
             context "with application ran"
                     $ beforeWith (startApplication >=> waitForApplicationDone) $
                 it "logs redis error message" $ \(asyncResult, logEntries) -> do
@@ -91,12 +103,11 @@ spec = context "App" $
                            asyncResult
                        `shouldStartWith` "Initialize database: Network.Socket.connect:"
                     logEntries `shouldSatisfy` (not . null)
-                    (TL.unpack . snd . last) logEntries `shouldStartWith` 
+                    (TL.unpack . snd . last) logEntries `shouldStartWith`
                         "AppException {exceptionMsg = \"Initialize database: \
                         \Network.Socket.connect:"
         context "with invalid redis host" -- invalidate host
-             $ beforeWith (\env -> return $ env
-                { envConnectInfo = (envConnectInfo env) { R.connectHost = "unknownHost" }}) $
+             $ beforeWith (\env -> return $ env { envPatchIni = patchHost "redis://unknownHost" }) $
             context "with application ran"
                     $ beforeWith (startApplication >=> waitForApplicationDone) $
                 it "throws redis exception" $ \(asyncResult, _) ->
@@ -114,7 +125,7 @@ spec = context "App" $
                                        (return False)
                             logEntries `shouldSatisfy` (not . null)
                             (TL.unpack . snd . head) logEntries `shouldStartWith`
-                                "Initial configuration"
+                                "Startup version"
                             (TL.unpack . snd . last) logEntries `shouldBe`
                                 "Shutdown complete"
                             -- see http://man7.org/linux/man-pages/man7/signal.7.html
@@ -133,9 +144,9 @@ spec = context "App" $
         logEntries <- reverse . List.resourceSink <$> readIORef (envLog env)
         return (asyncResult, logEntries)
     startApplication env = do
-        -- reset resources, otherwise the effect init function would block undefinitely
+        -- reset resources
         atomicWriteIORef (envLog env) (List.Resource [] Log.Debug)
-        void $ C.tryTakeMVar $ envRedis env
+        void $ C.swapMVar (envRedis env) Nothing
         -- start application asynchronously
         appAsync <- CA.async . System.Environment.withArgs ["-c", envConfigPath env]
                              $ runReaderT App.app env
@@ -156,9 +167,9 @@ setup = do
     let patchedConnectInfo = connectInfo { R.connectPort = R.PortNumber port }
     processHandle <- Helper.Redis.startServer patchedConnectInfo
     state <- State.defaultResource
-    redis <- C.newEmptyMVar
+    redis <- C.newMVar Nothing
     log' <- newIORef $ List.Resource [] Log.Debug
-    return $ Env state log' redis filePath processHandle Nothing patchedConnectInfo
+    return $ Env state log' redis filePath processHandle Nothing (patchPort . T.pack . show $ port)
   where
     filePath = "test/fixtures/valid.ini"
 

@@ -1,7 +1,6 @@
 module Tests.LogSpec (spec) where
 
 import qualified Effect.Log as Log
-import qualified Effect.Log.Init as Log
 import qualified Effect.Log.Impl.FastLogger as FastLogger
 
 import qualified Control.Concurrent as C
@@ -11,7 +10,7 @@ import qualified System.IO.Silently as Silently
 import           Test.Hspec
 import qualified Test.Hspec.Expectations.Lifted as L
 
-type MyLogM = ReaderT (C.MVar FastLogger.Resource) IO
+type MyLogM = ReaderT (C.MVar (Maybe FastLogger.Resource)) IO
 instance FastLogger.HasResource MyLogM where getResource = ask
 
 testInfo :: MyLogM ()
@@ -34,6 +33,6 @@ spec = context "Log" $
         it "excludes debug messages" $ runReaderT testDebug
   where
     buildFastLoggerRunner = do
-        env <- C.newEmptyMVar @FastLogger.Resource
+        env <- C.newMVar Nothing
         runReaderT (Log.init Log.Info Log.StdOut) env
         return env

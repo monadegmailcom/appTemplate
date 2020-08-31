@@ -8,7 +8,6 @@ module Effect.Log.Impl.FastLogger
     ) where
 
 import           Effect.Log
-import           Effect.Log.Init
 
 import qualified Control.Concurrent as C
 import           Control.Monad (void, when)
@@ -29,11 +28,19 @@ data Resource = Resource { resourceLoggerSet :: !FL.LoggerSet
 
 -- | Provide resource.
 class HasResource m where
-    getResource :: m (C.MVar Resource)
+    getResource :: m (C.MVar (Maybe Resource))
 
 -- implement logging in IO using resource
 instance (Monad m, MonadIO m, HasResource m) => LogM m where
-    log level msg = getResource >>= liftIO . C.tryReadMVar >>= \case
+    init minLogLevel logDestination = do
+        loggerSet <- liftIO $ case logDestination of
+            StdOut -> FL.newStdoutLoggerSet bufferSize
+            File filePath -> FL.newFileLoggerSet bufferSize filePath
+        -- use time cache because getting and formatting time is expensive
+        timeCache <- liftIO $ FL.newTimeCache FL.simpleTimeFormat
+        -- reset mvar
+        getResource >>= liftIO . void . (`C.swapMVar` Just (Resource loggerSet minLogLevel timeCache))
+    log level msg = getResource >>= liftIO . C.readMVar >>= \case
         -- just ignore if not initialized
         Nothing -> return ()
         Just (Resource loggerSet minLogLevel timeCache) ->
@@ -41,19 +48,6 @@ instance (Monad m, MonadIO m, HasResource m) => LogM m where
             when (level >= minLogLevel) $
                 -- get formatted time from cache
                 liftIO timeCache >>= liftIO . FL.pushLogStrLn loggerSet . formatStr level msg
-
--- initialize resource
-instance (Monad m, MonadIO m, HasResource m) => InitM m where
-    init minLogLevel logDestination = do
-        loggerSet <- liftIO $ case logDestination of
-            StdOut -> FL.newStdoutLoggerSet bufferSize
-            File filePath -> FL.newFileLoggerSet bufferSize filePath
-        -- use time cache because getting and formatting time is expensive
-        timeCache <- liftIO $ FL.newTimeCache FL.simpleTimeFormat
-        -- empty mvar if already taken
-        getResource >>= liftIO . void . C.tryTakeMVar
-        -- reset mvar
-        getResource >>= liftIO . void . (`C.tryPutMVar` Resource loggerSet minLogLevel timeCache)
 
 -- construct logger sets without buffering (1 byte buffer)
 bufferSize :: Int

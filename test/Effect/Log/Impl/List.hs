@@ -4,7 +4,6 @@ module Effect.Log.Impl.List
     ) where
 
 import           Effect.Log
-import           Effect.Log.Init
 
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Data.IORef
@@ -18,6 +17,8 @@ class HasResource m where
     getResource :: m (IORef Resource)
 
 instance (Monad m, MonadIO m, HasResource m) => LogM m where
+    init minLogLevel _ =
+        getResource >>= liftIO . flip atomicWriteIORef (Resource [] minLogLevel)
     log level msg = do
         ioRef <- getResource
         liftIO . atomicModifyIORef' ioRef $ \(Resource sink minLogLevel) -> do
@@ -26,6 +27,3 @@ instance (Monad m, MonadIO m, HasResource m) => LogM m where
                         else sink
             (Resource sink' minLogLevel, ())
 
-instance (Monad m, MonadIO m, HasResource m) => InitM m where
-    init minLogLevel _ =
-        getResource >>= liftIO . flip atomicWriteIORef (Resource [] minLogLevel)
