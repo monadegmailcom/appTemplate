@@ -16,14 +16,14 @@ import           Control.Monad.Reader (ReaderT, asks)
 
 {- | The application resources for effect implementations. -}
 data Resource = Resource
-    { resourceLog :: !(C.MVar (Maybe FastLogger.Resource))
+    { resourceLog :: !FastLogger.Resource
     , resourceState :: !State.Resource
     , resourceRedis :: !(C.MVar (Maybe Redis.Connection))
     }
 
 {- | Build default resource. Note: some resources must be initialized before usage. -}
 defaultResource :: IO Resource
-defaultResource = Resource <$> C.newMVar Nothing <*> State.defaultResource <*> C.newMVar Nothing
+defaultResource = Resource <$> FastLogger.def <*> State.defaultResource <*> C.newMVar Nothing
 
 type App = ReaderT Resource IO
 

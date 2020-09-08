@@ -3,27 +3,33 @@ module Tests.LogSpec (spec) where
 import qualified Effect.Log as Log
 import qualified Effect.Log.Impl.FastLogger as FastLogger
 
-import qualified Control.Concurrent as C
 import           Control.Monad.Reader (ReaderT, ask, runReaderT)
 import           Control.Monad.Trans.Control (control)
 import qualified System.IO.Silently as Silently
 import           Test.Hspec
 import qualified Test.Hspec.Expectations.Lifted as L
+import qualified Time.Units
 
-type MyLogM = ReaderT (C.MVar (Maybe FastLogger.Resource)) IO
+type MyLogM = ReaderT FastLogger.Resource IO
 instance FastLogger.HasResource MyLogM where getResource = ask
 
+sleep :: IO ()
+sleep = Time.Units.threadDelay $ Time.Units.sec 0.1
+
 testInfo :: MyLogM ()
-testInfo = 
-    control (\runInIO -> Silently.capture_ (runInIO $ Log.info "hi")) >>= (`L.shouldContain` "hi")
+testInfo
+     = control (\runInIO -> Silently.capture_ (runInIO (Log.info "hi") >> sleep))
+   >>= (`L.shouldContain` "hi")
 
 testWarning :: MyLogM ()
-testWarning = 
-    control (\runInIO -> Silently.capture_ (runInIO $ Log.warning "hi")) >>= (`L.shouldContain` "hi")
+testWarning
+    = control (\runInIO -> Silently.capture_ (runInIO (Log.warning "hi") >> sleep))
+  >>= (`L.shouldContain` "hi")
 
 testDebug :: MyLogM ()
-testDebug = 
-    control (\runInIO -> Silently.capture_ (runInIO $ Log.debug "hi")) >>= (`L.shouldBe` "")
+testDebug
+    = control (\runInIO -> Silently.capture_ (runInIO (Log.debug "hi") >> sleep))
+  >>= (`L.shouldBe` "")
 
 spec :: Spec
 spec = context "Log" $
@@ -33,6 +39,6 @@ spec = context "Log" $
         it "excludes debug messages" $ runReaderT testDebug
   where
     buildFastLoggerRunner = do
-        env <- C.newMVar Nothing
+        env <- FastLogger.def
         runReaderT (Log.init Log.Info Log.StdOut) env
         return env

@@ -5,12 +5,14 @@
 module Effect.Log.Impl.FastLogger
     ( HasResource(..)
     , Resource(..)
+    , def
     ) where
 
 import           Effect.Log
 
 import qualified Control.Concurrent as C
-import           Control.Monad (void, when)
+import qualified Control.Concurrent.Async as C
+import           Control.Monad (forever, void, when)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
@@ -20,38 +22,66 @@ import           Formatting ((%))
 import qualified Formatting as F
 import qualified System.Log.FastLogger as FL
 
+data Sink = Sink FL.LoggerSet !Level !Effect.Log.Destination
+
+data Item = Item !FL.LoggerSet !Effect.Log.Destination !FL.LogStr
+
 -- | Logging resource.
-data Resource = Resource { resourceLoggerSet :: !FL.LoggerSet
-                         , resourceMinLogLevel :: !Level
+data Resource = Resource { resourceSink :: !(C.MVar (Maybe Sink))
                          , resourceTimeCache :: !(IO FL.FormattedTime)
+                         , resourceChan :: !(C.Chan Item)
                          }
+
+def :: IO Resource
+def = do
+    -- use time cache because getting and formatting time is expensive
+    timeCache <- FL.newTimeCache FL.simpleTimeFormat
+
+    -- open channel to synchronize write request because fast logger does not guarantee
+    -- order when used multithreaded
+    chan <- C.newChan
+
+    -- sink not initialized
+    sink <- C.newMVar Nothing
+
+    -- start reading channel
+    void $ C.async $ forever (C.readChan chan >>= logStr)
+
+    return $ Resource sink timeCache chan
 
 -- | Provide resource.
 class HasResource m where
-    getResource :: m (C.MVar (Maybe Resource))
+    getResource :: m Resource
 
 -- implement logging in IO using resource
 instance (Monad m, MonadIO m, HasResource m) => LogM m where
     init minLogLevel logDestination = do
         loggerSet <- liftIO $ case logDestination of
-            StdOut -> FL.newStdoutLoggerSet bufferSize
-            File filePath -> FL.newFileLoggerSet bufferSize filePath
-        -- use time cache because getting and formatting time is expensive
-        timeCache <- liftIO $ FL.newTimeCache FL.simpleTimeFormat
-        -- reset mvar
-        getResource >>= liftIO . void . (`C.swapMVar` Just (Resource loggerSet minLogLevel timeCache))
-    log level msg = getResource >>= liftIO . C.readMVar >>= \case
-        -- just ignore if not initialized
-        Nothing -> return ()
-        Just (Resource loggerSet minLogLevel timeCache) ->
-            -- skip logging if minimum log level not reached
-            when (level >= minLogLevel) $
-                -- get formatted time from cache
-                liftIO timeCache >>= liftIO . FL.pushLogStrLn loggerSet . formatStr level msg
+            StdOut -> FL.newStdoutLoggerSet FL.defaultBufSize
+            File filePath -> FL.newFileLoggerSet FL.defaultBufSize filePath
 
--- construct logger sets without buffering (1 byte buffer)
-bufferSize :: Int
-bufferSize = 1
+        let sink = Sink loggerSet minLogLevel logDestination
+
+        getResource >>= \res -> liftIO . void $
+            -- swap mvar, new write requests will use new sink
+            (resourceSink res `C.swapMVar` Just sink)
+
+    log level msg = do
+        Resource sink timeCache chan <- getResource
+        liftIO $ C.readMVar sink >>= \case
+            -- skip if logging not initialized
+            Nothing -> return ()
+            Just (Sink loggerSet minLogLevel dest) ->
+                -- skip logging if minimum log level not reached
+                when (level >= minLogLevel) $
+                    -- get formatted time from cache and queue for logging
+                    timeCache >>= C.writeChan chan . Item loggerSet dest . formatStr level msg
+
+logStr :: Item -> IO ()
+logStr (Item loggerSet dest str) = do
+    FL.pushLogStrLn loggerSet str
+    -- stdout seems not to flush automatically
+    when (dest == StdOut) $ FL.flushLogStr loggerSet
 
 -- display log level without Show instance because we want to avoid Prelude String
 -- error only happens if code is inconsistent
