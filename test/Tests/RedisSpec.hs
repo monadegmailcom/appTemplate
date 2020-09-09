@@ -10,7 +10,6 @@ import qualified Effect.Log as Log
 import qualified Effect.Log.Impl.List as List
 import qualified Helper.Redis
 
-import qualified Control.Concurrent as C
 import qualified Control.Exception.Safe as E
 import           Control.Monad ((>=>))
 import           Control.Monad.IO.Class (liftIO)
@@ -26,7 +25,7 @@ import qualified Time.Units
 
 -- test context
 data Env = Env { envConnectInfo :: R.ConnectInfo
-               , envRedis :: C.MVar (Maybe Redis.Connection)
+               , envRedis :: Redis.Resource
                , envLog :: IORef List.Resource
                }
 
@@ -79,4 +78,4 @@ setup = do
     let connectInfo = R.defaultConnectInfo
     port <- Helper.Redis.getFreePort . R.connectHost $ connectInfo
     let patchedConnectInfo = connectInfo { R.connectPort = R.PortNumber port }
-    Env patchedConnectInfo <$> C.newMVar Nothing <*> newIORef (List.Resource [] Log.Debug)
+    Env patchedConnectInfo <$> Redis.def <*> newIORef (List.Resource [] Log.Debug)

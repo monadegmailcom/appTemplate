@@ -11,19 +11,18 @@ import           Effect.Signal.Impl ()
 import qualified Effect.State.Impl as State
 import           Effect.Thread.Impl ()
 
-import qualified Control.Concurrent as C
 import           Control.Monad.Reader (ReaderT, asks)
 
 {- | The application resources for effect implementations. -}
 data Resource = Resource
     { resourceLog :: !FastLogger.Resource
     , resourceState :: !State.Resource
-    , resourceRedis :: !(C.MVar (Maybe Redis.Connection))
+    , resourceRedis :: !Redis.Resource
     }
 
 {- | Build default resource. Note: some resources must be initialized before usage. -}
 defaultResource :: IO Resource
-defaultResource = Resource <$> FastLogger.def <*> State.defaultResource <*> C.newMVar Nothing
+defaultResource = Resource <$> FastLogger.def <*> State.defaultResource <*> Redis.def
 
 type App = ReaderT Resource IO
 

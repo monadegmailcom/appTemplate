@@ -17,10 +17,9 @@ import qualified Effect.State.Impl as State
 import           Effect.Thread.Impl ()
 import qualified Helper.Redis
 
-import qualified Control.Concurrent as C
 import qualified Control.Concurrent.Async as CA
 import qualified Control.Exception as E
-import           Control.Monad ((>=>), void)
+import           Control.Monad ((>=>))
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Reader (asks, runReaderT, ReaderT)
 import           Data.Bifunctor (first)
@@ -41,7 +40,7 @@ import qualified Time.Units
 -- test context
 data Env = Env { envState :: State.Resource
                , envLog :: IORef List.Resource
-               , envRedis :: C.MVar (Maybe Redis.Connection)
+               , envRedis :: Redis.Resource 
                , envConfigPath :: FilePath
                , envRedisProcessHandle :: Process.ProcessHandle
                , envAppAsync :: Maybe (CA.Async ())
@@ -146,7 +145,6 @@ spec = context "App" $
     startApplication env = do
         -- reset resources
         atomicWriteIORef (envLog env) (List.Resource [] Log.Debug)
-        void $ C.swapMVar (envRedis env) Nothing
         -- start application asynchronously
         appAsync <- CA.async . System.Environment.withArgs ["-c", envConfigPath env]
                              $ runReaderT App.app env
@@ -167,7 +165,7 @@ setup = do
     let patchedConnectInfo = connectInfo { R.connectPort = R.PortNumber port }
     processHandle <- Helper.Redis.startServer patchedConnectInfo
     state <- State.defaultResource
-    redis <- C.newMVar Nothing
+    redis <- Redis.def
     log' <- newIORef $ List.Resource [] Log.Debug
     return $ Env state log' redis filePath processHandle Nothing (patchPort . T.pack . show $ port)
   where

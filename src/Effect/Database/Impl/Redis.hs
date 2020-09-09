@@ -3,6 +3,8 @@ module Effect.Database.Impl.Redis
     ( Exception(..)
     , HasResource(..)
     , Redis.Connection
+    , Resource
+    , def
     ) where
 
 import qualified Config
@@ -17,13 +19,18 @@ import qualified Database.Redis as Redis
 
 -- | Provide resource.
 class HasResource m where
-    getResource :: m (C.MVar (Maybe Redis.Connection))
+    getResource :: m Resource
+
+newtype Resource = Resource { resourceConnection :: C.MVar (Maybe Redis.Connection)}
+
+def :: IO Resource
+def = Resource <$> C.newMVar Nothing
 
 instance (Monad m, E.MonadThrow m, E.MonadCatch m, MonadIO m, HasResource m)
   => DatabaseM Config.Redis m where
     connect config = do
         connection <- liftIO $ Redis.checkedConnect (Config.redisConnectInfo config)
-        getResource >>= liftIO . void . flip C.swapMVar (Just connection)
+        getResource >>= \(Resource mvar) -> liftIO . void $ C.swapMVar mvar (Just connection)
     getByKey = runRedis . Redis.get
     setByKey key value = runRedis (Redis.set key value) >>= \case
         Redis.Ok -> return ()
@@ -35,7 +42,7 @@ newtype Exception = Exception Redis.Reply deriving (Eq, Show, E.Exception)
 -- run redis action and retry once on failure.
 runRedis :: (E.MonadThrow m, E.MonadCatch m, MonadIO m, HasResource m)
          => Redis.Redis (Either Redis.Reply a) -> m a
-runRedis action = getResource >>= liftIO . C.readMVar >>= \case
+runRedis action = getResource >>= liftIO . C.readMVar . resourceConnection >>= \case
     Nothing -> E.throw $ Exception $ Redis.Error "Redis uninitialized"
     Just con -> liftIO (Redis.runRedis con action) >>= throwOnLeft
 
