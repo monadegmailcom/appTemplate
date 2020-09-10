@@ -20,4 +20,7 @@ parseIniFile content = do
     Right (config, Ini.printIni . redact $ ini)
   where
     -- we do not want expose confidential information like passwords
-    redact = Ini.Ini . HashMap.adjust (HashMap.insert "auth" "<REDACTED>") "Redis" . Ini.unIni
+    redact ini = let adj = HashMap.adjust (HashMap.insert "auth" "<REDACTED>") "Redis" $ Ini.unIni ini
+                 in Ini.Ini (HashMap.map HashMap.toList adj) []
+
+--(`Ini.Ini` []) . HashMap.adjust (HashMap.insert "auth" "<REDACTED>") "Redis" . Ini.unIni

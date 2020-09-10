@@ -41,28 +41,30 @@ default-extensions:
 - TypeOperators
 - UndecidableInstances
 
+dependencies:
+- async >= 2.2.1 && < 2.3
+- base >= 4.7 && < 5
+- bytestring >= 0.10.8.2 && < 0.10.11
+- case-insensitive >= 1.2.0.11 && < 1.2.2
+- cmdargs >= 0.10.20 && < 0.11
+- fast-logger >= 2.4.13 && < 3.1
+- formatting >= 6.3.7 && < 6.4
+- hedis >= 0.10.10 && < 0.13
+- ini >= 0.3.6 && < 0.5
+- monad-control >= 1.0.2.3 && < 1.0.3
+- network >= 2.8.0.0 && < 3.1.2
+- mtl >= 2.2.2 && < 2.3
+- o-clock
+- streamly >= 0.5.2 && < 0.8
+- safe-exceptions >= 0.1.7.0 && < 0.1.8
+- stm >= 2.5.0.0 && < 2.5.1
+- text >= 1.2.3.1 && < 1.2.5
+- time >= 1.8.0.2 && < 1.10
+- unix >= 2.7.2.2 && < 2.7.3
+- unordered-containers >= 0.2.9.0 && < 0.2.11
+
 library:
   source-dirs: src
-  dependencies:
-  - async >= 2.2.1 && < 2.3
-  - base >= 4.7 && < 5
-  - bytestring >= 0.10.8.2 && < 0.10.9
-  - case-insensitive >= 1.2.0.11 && < 1.2.1
-  - cmdargs >= 0.10.20 && < 0.11
-  - fast-logger >= 2.4.13 && < 2.5
-  - formatting >= 6.3.7 && < 6.4
-  - hedis >= 0.10.10 && < 0.11
-  - ini >= 0.3.6 && < 0.4
-  - monad-control >= 1.0.2.3 && < 1.0.3
-  - network >= 2.8.0.0 && < 2.8.1
-  - mtl >= 2.2.2 && < 2.3
-  - o-clock
-  - safe-exceptions >= 0.1.7.0 && < 0.1.8
-  - stm >= 2.5.0.0 && < 2.5.1
-  - text >= 1.2.3.1 && < 1.2.4
-  - time >= 1.8.0.2 && < 1.8.1
-  - unix >= 2.7.2.2 && < 2.7.3
-  - unordered-containers >= 0.2.9.0 && < 0.2.10
 executables:
   appTemplate:
     main:                Main.hs
@@ -75,15 +77,6 @@ executables:
     - -with-rtsopts=-qg
     dependencies:
     - appTemplate
-    - base >= 4.7 && < 5
-    - formatting >= 6.3.7 && < 6.4
-    - hedis >= 0.10.10 && < 0.11
-    - ini >= 0.3.6 && < 0.4
-    - monad-control >= 1.0.2.3 && < 1.0.3
-    - mtl >= 2.2.2 && < 2.3
-    - safe-exceptions >= 0.1.7.0 && < 0.1.8
-    - stm >= 2.5.0.0 && < 2.5.1
-    - text >= 1.2.3.1 && < 1.2.4
 tests:
   appTemplate-test:
     main:                Spec.hs
@@ -94,24 +87,10 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - appTemplate
-    - async >= 2.2.1 && < 2.3
-    - base >= 4.7 && < 5
-    - bytestring >= 0.10.8.2 && < 0.10.9
-    - hedis >= 0.10.10 && < 0.11
     - hspec >= 1.8
     - hspec-expectations-lifted >= 0.10.0 && < 0.11
-    - ini >= 0.3.6 && < 0.4
-    - monad-control >= 1.0.2.3 && < 1.0.3
-    - mtl >= 2.2.2 && < 2.3
-    - network >= 2.8.0.0 && < 2.8.1
-    - o-clock
-    - process >= 1.6.3.0 && < 1.6.4
-    - safe-exceptions >= 0.1.7.0 && < 0.1.8
+    - process >= 1.6.3.0 && < 1.6.10
     - silently >= 1.2.5 && < 1.3
-    - stm >= 2.5.0.0 && < 2.5.1
-    - text >= 1.2.3.1 && < 1.2.4
-    - unix >= 2.7.2.2 && < 2.7.3
-    - unordered-containers >= 0.2.9.0 && < 0.2.10
   hlint:
     main:                Hlint.hs
     source-dirs:         test/hlint
@@ -120,5 +99,4 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - base >= 4.7 && < 5
     - hlint >= 2.1.11

@@ -2,7 +2,6 @@
 module Effect.Database.Impl.Redis
     ( Exception(..)
     , HasResource(..)
-    , Redis.Connection
     , Resource
     , def
     ) where
@@ -21,7 +20,7 @@ import qualified Database.Redis as Redis
 class HasResource m where
     getResource :: m Resource
 
-newtype Resource = Resource { resourceConnection :: C.MVar (Maybe Redis.Connection)}
+newtype Resource = Resource { resourceConnection :: C.MVar (Maybe Redis.Connection) }
 
 def :: IO Resource
 def = Resource <$> C.newMVar Nothing

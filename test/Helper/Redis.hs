@@ -56,6 +56,8 @@ startServer connectInfo = do
 
 -- wait until trigger string is read from handle
 waitFor :: Handle.Handle -> T.Text -> IO ()
-waitFor handle str = snd . T.breakOn str <$> T.hGetLine handle >>= \case
-    "" -> waitFor handle str -- substring not found, keep waiting
-    _ -> return () -- substring found, exit loop
+waitFor handle str = T.hGetLine handle >>= loopIfNotFound . snd . T.breakOn str
+  where
+    loopIfNotFound = \case
+       "" -> waitFor handle str -- substring not found, keep waiting
+       _ -> return () -- substring found, exit loop

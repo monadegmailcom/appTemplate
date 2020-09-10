@@ -4,6 +4,7 @@ module Effect.Thread
 
 import qualified Control.Concurrent as C
 import qualified Control.Exception.Safe as E
+import qualified Streamly as S
 import qualified Time.Units
 
 type Second = Time.Units.Time Time.Units.Second
@@ -15,3 +16,4 @@ class Monad m => ThreadM m where
     delay :: Second -> m ()
     timeout :: Second -> m a -> m (Maybe a)
     mapConcurrently :: (a -> m b) -> [a] -> m ()
+    parallely :: S.IsStream t => [m a] -> t m a

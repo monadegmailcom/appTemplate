@@ -56,9 +56,7 @@ parseFromIni :: Ini.Ini -> Either String Config
 parseFromIni ini = do
     logger <- do
         let section = "Log"
-            destination = case T.unpack <$> lookupOptional section "path" of
-                Nothing -> Log.StdOut
-                Just path -> Log.File path
+            destination = maybe Log.StdOut Log.File (T.unpack <$> lookupOptional section "path")
         level <- lookupMandatory section "level" >>= toLogLevel
         return $ Log destination level
     redis <- do

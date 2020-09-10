@@ -40,7 +40,7 @@ import qualified Time.Units
 -- test context
 data Env = Env { envState :: State.Resource
                , envLog :: IORef List.Resource
-               , envRedis :: Redis.Resource 
+               , envRedis :: Redis.Resource
                , envConfigPath :: FilePath
                , envRedisProcessHandle :: Process.ProcessHandle
                , envAppAsync :: Maybe (CA.Async ())
@@ -61,8 +61,9 @@ instance {-# OVERLAPS #-} Filesystem.FilesystemM App where
         return . TL.fromStrict . Ini.printIni . patchIni $ ini
 
 patchKey :: T.Text -> T.Text -> (T.Text -> T.Text) -> Ini.Ini -> Ini.Ini
-patchKey section key modifyValue =
-    Ini.Ini . HashMap.adjust (HashMap.adjust modifyValue key) section . Ini.unIni
+patchKey section key modifyValue ini = Ini.Ini  (HashMap.map HashMap.toList adj) []
+  where
+    adj = HashMap.adjust (HashMap.adjust modifyValue key) section . Ini.unIni $ ini
 
 patchPort :: T.Text -> Ini.Ini -> Ini.Ini
 patchPort port = patchKey "Redis" "url" replacePort
@@ -110,9 +111,10 @@ spec = context "App" $
             context "with application ran"
                     $ beforeWith (startApplication >=> waitForApplicationDone) $
                 it "throws redis exception" $ \(asyncResult, _) ->
-                    first E.fromException asyncResult `shouldBe` Left (Just $ App.AppException
-                        "Initialize database: Network.BSD.getHostByName: does not exist \
-                        \(no such host entry)")
+                    case first E.fromException asyncResult of
+                        Left (Just (App.AppException msg)) -> msg `shouldContain` 
+                            "does not exist (Name or service not known)"
+                        _ -> fail "Not an AppException thrown"
         context "with valid config" $ beforeWith return $
             context "with application started" $ beforeWith startApplication $
                 context "with USR1 and INT signals sent" $ beforeWith

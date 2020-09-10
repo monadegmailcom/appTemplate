@@ -48,8 +48,9 @@ spec = context "Config" $
                       mandatoryKeys
   where
     -- update key in section with value (or delete key)
-    update section key mValue = Ini.Ini . HashMap.adjust (HashMap.update (const mValue) key) section
-                                        . Ini.unIni
+    update section key mValue ini =
+        let adj = HashMap.adjust (HashMap.update (const mValue) key) section . Ini.unIni $ ini
+        in Ini.Ini (HashMap.map HashMap.toList adj) []
     readConfig = flip System.Environment.withArgs
                $ CmdLine.parseCommandLineOptions >>= T.readFile . CmdLine.cmdLineConfigFile
     right e = (e `shouldSatisfy` isRight) >> either (error "left") return e

@@ -26,6 +26,7 @@ import qualified Data.Version as Version
 import           Formatting ((%))
 import qualified Formatting as F
 import qualified Paths_appTemplate as Paths
+import qualified Streamly.Prelude as S
 import qualified System.Posix.Signals as PS
 
 -- use for exception string annotation
@@ -97,12 +98,20 @@ runPollers :: ( E.MonadMask m
               , State.StateM m
               , Thread.ThreadM m)
            => Config.Redis -> m ()
-runPollers configRedis = Thread.mapConcurrently forever
+runPollers configRedis =
+    Thread.mapConcurrently forever
      [ E.uninterruptibleMask_ $ Poll.pollState "U"
      , Poll.pollState "S"
      , Poll.pollRedis configRedis "R1"
      , Poll.pollRedis configRedis "R2"
      ]
+
+--    S.drain . Thread.parallely $ map forever
+--        [ E.uninterruptibleMask_ $ Poll.pollState "U"
+--        , Poll.pollState "S"
+--        , Poll.pollRedis configRedis "R1"
+--        , Poll.pollRedis configRedis "R2"
+--        ]
 
 {- Install signal handlers. Terminate signals are transformed to async exception thrown to
    current thread. -}
