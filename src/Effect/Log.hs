@@ -12,7 +12,8 @@ module Effect.Log
 
 import qualified Data.Text.Lazy as TL
 
-import Prelude hiding (log, error)
+import           Prelude hiding (log, error)
+import qualified Streamly as S
 
 -- | Ordered log levels.
 data Level = Debug | Info | Warning | Error deriving (Eq, Ord, Show)
@@ -31,7 +32,7 @@ data Destination = StdOut | File FilePath deriving (Eq, Show)
 
 -- | Logging effect.
 class Monad m => LogM m where
-    init :: Level -> Destination -> m () -- ^ Initialize logging.
+    init :: S.IsStream t => Level -> Destination -> t m () -- ^ Initialize logging.
     log :: Level -> TL.Text -> m () -- ^ Log msg with level.
 
 -- | Log debug level.

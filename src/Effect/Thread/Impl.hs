@@ -21,5 +21,6 @@ instance (Monad m, E.MonadThrow m, MonadIO m, MonadBaseControl IO m, StM m () ~ 
         Nothing -> return Nothing
         Just stm -> Just <$> restoreM stm
     mapConcurrently f ls = control $ \runInIO -> CA.mapConcurrently_ (runInIO . f) ls
-    parallely = S.parallely . mconcat . map S.yieldM
+    parallely = S.asyncly . mconcat . map S.yieldM
+    --parallely = S.parallely . mconcat . map S.yieldM
 

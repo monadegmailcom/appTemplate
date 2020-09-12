@@ -72,7 +72,8 @@ app = E.handle logAndRethrow $ do
     Log.info "Application initialized"
 
     -- call pollers forever and log goodbye message finally
-    E.finally (runPollers configRedis) $ Log.info "Shutdown complete"
+
+    E.finally (runPollers configRedis) $ Log.info "Shutdown"
 
 logAndRethrow :: (E.MonadThrow m, Log.LogM m) => E.SomeException -> m ()
 logAndRethrow e = do
@@ -90,8 +91,7 @@ getConfig = CmdLine.parseCommandLineOptions
    If the current thread receives an async exception (e.g. from the signal handlers)
    all pollers are cancelled.
    If any poller throws an exception all sibling pollers are cancelled.
-   Note: one of the poller is masked uninterruptable, it will
-   delay termination until next iteration in `forever`. -}
+-}
 runPollers :: ( E.MonadMask m
               , Log.LogM m
               , Database.DatabaseM Config.Redis m
@@ -99,19 +99,12 @@ runPollers :: ( E.MonadMask m
               , Thread.ThreadM m)
            => Config.Redis -> m ()
 runPollers configRedis =
-    Thread.mapConcurrently forever
-     [ E.uninterruptibleMask_ $ Poll.pollState "U"
-     , Poll.pollState "S"
-     , Poll.pollRedis configRedis "R1"
-     , Poll.pollRedis configRedis "R2"
-     ]
-
---    S.drain . Thread.parallely $ map forever
---        [ E.uninterruptibleMask_ $ Poll.pollState "U"
---        , Poll.pollState "S"
---        , Poll.pollRedis configRedis "R1"
---        , Poll.pollRedis configRedis "R2"
---        ]
+    S.drain . Thread.parallely $ map forever
+        [ Poll.pollState "U"
+        , Poll.pollState "S"
+        , Poll.pollRedis configRedis "R1"
+        , Poll.pollRedis configRedis "R2"
+        ]
 
 {- Install signal handlers. Terminate signals are transformed to async exception thrown to
    current thread. -}

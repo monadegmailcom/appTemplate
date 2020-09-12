@@ -8,27 +8,26 @@ import           Control.Monad.Trans.Control (control)
 import qualified System.IO.Silently as Silently
 import           Test.Hspec
 import qualified Test.Hspec.Expectations.Lifted as L
-import qualified Time.Units
 
 type MyLogM = ReaderT FastLogger.Resource IO
 instance FastLogger.HasResource MyLogM where getResource = ask
 
-sleep :: IO ()
-sleep = Time.Units.threadDelay $ Time.Units.sec 0.1
-
 testInfo :: MyLogM ()
 testInfo
-     = control (\runInIO -> Silently.capture_ (runInIO (Log.info "hi") >> sleep))
+     = control (\runInIO -> Silently.capture_ (   runInIO (Log.info "hi" 
+                                               >> FastLogger.flush)))
    >>= (`L.shouldContain` "hi")
 
 testWarning :: MyLogM ()
 testWarning
-    = control (\runInIO -> Silently.capture_ (runInIO (Log.warning "hi") >> sleep))
+    = control (\runInIO -> Silently.capture_ (   runInIO (Log.warning "hi" 
+                                              >> FastLogger.flush)))
   >>= (`L.shouldContain` "hi")
 
 testDebug :: MyLogM ()
 testDebug
-    = control (\runInIO -> Silently.capture_ (runInIO (Log.debug "hi") >> sleep))
+    = control (\runInIO -> Silently.capture_ (   runInIO (Log.debug "hi" 
+                                              >> FastLogger.flush)))
   >>= (`L.shouldBe` "")
 
 spec :: Spec

@@ -128,13 +128,9 @@ spec = context "App" $
                             (TL.unpack . snd . head) logEntries `shouldStartWith`
                                 "Startup version"
                             (TL.unpack . snd . last) logEntries `shouldBe`
-                                "Shutdown complete"
+                                "Shutdown"
                             -- see http://man7.org/linux/man-pages/man7/signal.7.html
                             logEntries `shouldSatisfy` ((Log.Info, "Caught signal 10, ignore") `elem`)
-                            -- note: we expect "U ..done" to follow termination signal because
-                            -- this event is uninterruptable
-                            dropWhile (/= (Log.Info, "Caught signal 2, terminate")) logEntries
-                                `shouldSatisfy` ((Log.Info, "U ..done") `elem`)
   where
     waitForApplicationDone env = do
         -- wait for application to finish
