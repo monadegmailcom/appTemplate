@@ -1,10 +1,9 @@
 module Main where
 
 import qualified App
-import qualified App.Impl
-import           Control.Monad.Reader (runReaderT)
+import App.Impl ()
 
--- application entry point, start with resource for effect implementations
+-- application entry point
 main :: IO ()
-main = App.Impl.defaultResource >>= runReaderT App.app
+main = App.app
 

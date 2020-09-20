@@ -7,7 +7,7 @@ import qualified Config
 import qualified Config.Internal
 import qualified Effect.CmdLine as CmdLine
 import qualified Effect.CmdLine.Impl as CmdLine ()
-import qualified Effect.Log as Log
+import qualified Log
 
 import           Data.Either (isRight)
 import qualified Data.HashMap.Strict as HashMap
@@ -58,7 +58,7 @@ spec = context "Config" $
                                                 , Redis.connectPort = Redis.PortNumber 8888
                                                 , Redis.connectAuth = Just "secretpwd"
                                                 , Redis.connectTimeout = Just 10.5 }
-    validConfig = Config.Config (Config.Log (Log.File "out.log") Log.Info)
+    validConfig = Config.Config (Config.Log (Config.File "out.log") Log.Info)
                                 (Config.Redis validConnectInfo)
     validArgs = ["-c", fixturesDir <> "valid.ini"]
     fixturesDir = "test/fixtures/"

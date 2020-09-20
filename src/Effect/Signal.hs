@@ -1,6 +1,8 @@
 {- | Signal effect. -}
 module Effect.Signal
-    ( SignalM(..)) where
+    ( SignalM(..)
+    , PS.SignalInfo(..)
+    ) where
 
 import qualified System.Posix.Signals as PS
 

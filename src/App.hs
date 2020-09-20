@@ -1,133 +1,251 @@
-{- | The application implementation.
-     Note: the application implementation "app" is running
-     in a monad restricted to use only effects from the contraint list, no IO operations
-     other than those provided by effect constraints are allowed. -}
-module App ( AppException(..)
-           , app
-           ) where
+{- | The application implementation. -}
+module App ( app ) where
 
-import qualified Config
 import qualified Effect.CmdLine as CmdLine
-import qualified Effect.Database as Database
+import qualified Effect.Redis as Redis
 import qualified Effect.Filesystem as Filesystem
-import qualified Effect.Log as Log
 import qualified Effect.Signal as Signal
-import qualified Effect.State as State
-import qualified Effect.Thread as Thread
+import qualified Effect.Time as Time
+import qualified Effect.Concurrent.Stream as Stream
+import qualified Effect.Concurrent.STM as STM
+import qualified Effect.Concurrent.Thread as Thread
+import qualified Config
+import qualified Log
 import qualified Poll
 
-import qualified Control.Concurrent as C
-import qualified Control.Exception as E (AsyncException( UserInterrupt))
 import qualified Control.Exception.Safe as E
-import           Control.Monad (forever, void)
-import qualified Data.Text as T
+import           Control.Monad (void, when)
+import           Data.Bifunctor (first)
+import           Data.Maybe (isJust, fromJust)
 import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Version as Version
 import           Formatting ((%))
 import qualified Formatting as F
 import qualified Paths_appTemplate as Paths
+import qualified Streamly as S
 import qualified Streamly.Prelude as S
 import qualified System.Posix.Signals as PS
+import qualified Time.Units
 
--- use for exception string annotation
-newtype AppException = AppException { exceptionMsg :: String} deriving (Show, Eq, E.Exception)
+-- | Application exception.
+newtype AppException = AppException { exceptionMsg :: TL.Text }
+    deriving (Show, Eq)
+    deriving anyclass E.Exception
 
--- to annotate exceptions thrown by effect implementations with a semantic context
-annotate :: (E.MonadCatch m) => String -> m a -> m a
-annotate msg action = E.catchAny action (\e -> E.throw . AppException $ msg <> ": " <> show e)
+-- | The application runs through these run level phases.
+data RunLevel
+    = -- | Set on startup, services like logging, redis, etc will be
+      --   started as soon as preconditional values are set (e.g.
+      --   configuration for filelogging or redis connection).
+      Events
+      -- | Set by termination signal, no more asynchronous
+      --   event processing will be started, wait for ongoing
+      --   processing to finish. In this run level, logging is
+      --   still operational.
+    | Logging
+      -- | Application process terminates
+    | Stopped
+    deriving (Eq, Ord)
 
-fromEither :: E.MonadThrow m => Either String a -> m a
-fromEither = \case
-    Left msg -> E.throwM $ AppException msg
-    Right x -> return x
-
-{- | Implementation of application logic. Function blocks until application shutdown. -}
-app :: ( E.MonadMask m
+{- | Function blocks until application shutdown.
+     Only effects from the contraint list are allowed, no IO operations. -}
+app :: ( E.MonadCatch m
        , Thread.ThreadM m
+       , Stream.StreamM m
+       , STM.STM m
        , CmdLine.CmdLineM m
-       , Filesystem.FilesystemM m
-       , Log.LogM m
-       , Database.DatabaseM Config.Redis m
-       , State.StateM m
-       , Signal.SignalM m)
+       , Filesystem.FilesystemM m h
+       , Redis.RedisM m c
+       , Signal.SignalM m
+       , Time.TimeM m)
     => m ()
-app = E.handle logAndRethrow $ do
-    annotate "Install signal handlers" installSignalHandlers
+app = do
+    -- the initial run level
+    runLevelR <- STM.newTVar' Events
 
-    (config, redactedConfigStr) <- getConfig
+    -- application wide state
+    stateR <- STM.newTVar' 0
 
-    --  and initialize logging
-    let Config.Log logDestination logLevel = Config.configLog config
-    annotate "Init logging" $ Log.init logLevel logDestination
+    -- the log handle relay determines the logging sink, the default stdout
+    -- will be replaced when the config is read.
+    logHandleR <-
+            Filesystem.stdout
+        >>= STM.newTVar'
 
-    Log.info . F.format ("Startup version " % F.string) $ Version.showVersion Paths.version
+    -- the log resource consists of a fifo queue for delay-free msg logging
+    -- (a channel) and a minimal log level to optionally reduce logging
+    -- noise, the default Log.Info will be replaced when the config is read.
+    logRes <-
+            Log.Resource
+        <$> STM.newTChan'
+        <*> STM.newTVar' Log.Info
 
-    -- log redacted configuration
-    Log.info . F.format ("Initial configuration\n" % F.stext) $ redactedConfigStr
+    -- the commandline options relay provides access to the parameter
+    -- passed to the application on the commandline
+    cmdlOptR <- STM.newEmptyTMVar'
 
-    let configRedis = Config.configRedis config
-    annotate "Initialize database" $ Database.connect configRedis
-    annotate "Check database connection" $ void $ Database.getByKey "test"
+    -- the config relay provides access to the application configuration,
+    -- will be read from a ini file
+    configR <- STM.newEmptyTMVar'
 
-    Log.info "Application initialized"
+    -- the redis connection relay
+    redisConR <- STM.newEmptyTMVar'
 
-    -- call pollers forever and log goodbye message finally
+    -- events to be processed in "Events" run level
+    let processEvents =
+            S.after (shutdownLogging logRes runLevelR)
+          . S.foldWith Stream.parallel
+          $ [ greet logRes
+            , readCmdLineOptions logRes cmdlOptR
+            , installSignalHandlers logRes runLevelR
+            , readConfigFile logRes cmdlOptR configR
+            , initLogging logRes configR logHandleR
+            , processStateRequests logRes runLevelR stateR
+            , processRedisRequests logRes runLevelR redisConR
+            , reconnectToRedis logRes runLevelR redisConR configR
+            ]
+        -- logging events processed before "Stopped" run level
+        processLogging = logging logRes runLevelR logHandleR
 
-    E.finally (runPollers configRedis) $ Log.info "Shutdown"
-
-logAndRethrow :: (E.MonadThrow m, Log.LogM m) => E.SomeException -> m ()
-logAndRethrow e = do
-    -- log is ignored if logging not yet initialized
-    Log.error . TL.pack . show $ e
-    E.throwM e
-
-getConfig :: (E.MonadCatch m, CmdLine.CmdLineM m, Filesystem.FilesystemM m)
-          => m (Config.Config, T.Text)
-getConfig = CmdLine.parseCommandLineOptions
-        >>= annotate "Read config file" . Filesystem.readFile . CmdLine.cmdLineConfigFile
-        >>= annotate "Parse config file" . fromEither . Config.parseIniFile . TL.toStrict
-
-{- Start poller asynchronously. Poller will terminate on asynchronous exceptions.
-   If the current thread receives an async exception (e.g. from the signal handlers)
-   all pollers are cancelled.
-   If any poller throws an exception all sibling pollers are cancelled.
--}
-runPollers :: ( E.MonadMask m
-              , Log.LogM m
-              , Database.DatabaseM Config.Redis m
-              , State.StateM m
-              , Thread.ThreadM m)
-           => Config.Redis -> m ()
-runPollers configRedis =
-    S.drain . Thread.parallely $ map forever
-        [ Poll.pollState "U"
-        , Poll.pollState "S"
-        , Poll.pollRedis configRedis "R1"
-        , Poll.pollRedis configRedis "R2"
-        ]
-
-{- Install signal handlers. Terminate signals are transformed to async exception thrown to
-   current thread. -}
-installSignalHandlers :: (Log.LogM m, Signal.SignalM m, Thread.ThreadM m) => m ()
-installSignalHandlers = do
-    Signal.installHandler usr1SignalHandler PS.sigUSR1
-    threadId <- Thread.myThreadId
-    mapM_ (Signal.installHandler $ termSignalHandler threadId) terminateSignals
+    -- run event processing in parallel, logging is processed single
+    -- threaded, other events are processed multithreaded
+    S.drain $ processLogging `Stream.parallel` processEvents
   where
-    -- list of signals on which we want to terminate, this conforms to the linux defaults,
-    -- see http://man7.org/linux/man-pages/man7/signal.7.html
-    -- exception is SIGPIPE, which we want to ignore
-    terminateSignals = [PS.sigHUP, PS.sigINT, PS.sigALRM, PS.sigTERM]
+    shutdownLogging logRes runLevelR =
+          STM.writeTVar' runLevelR Stopped
+          -- flush to wake up potentially blocking read on log channel
+       >> Log.flush logRes
+    untilShutdown runLevelR stream =
+        let blockWhileRunning =
+                 STM.atomically
+               $ STM.readTVar runLevelR
+             >>= (`when` STM.retry) . (== Events)
+              >> return Nothing
+        in S.map fromJust
+         . S.takeWhile isJust
+         $ Stream.parallel (S.yieldM blockWhileRunning)
+                           (S.map Just stream)
+    processStateRequests logRes runLevelR stateR =
+        let produceStateRequest
+                  = Thread.delay (Time.Units.sec 1)
+                 >> STM.readTVar' stateR
+                >>= Log.info logRes . F.format ("Request " % F.int)
+        in Stream.mapM (const $ Poll.runState logRes stateR)
+         . S.finally (Log.debug logRes "Stopped generating state requests")
+         . untilShutdown runLevelR
+         . Stream.repeatM
+         $ produceStateRequest
+    processRedisRequests logRes runLevelR redisConR =
+        let produceRedisRequest =
+                Thread.delay (Time.Units.sec 1.5)
+             >> Log.info logRes "Request redis"
+            str = "Exception while processing redis request, reset\
+                  \ redis connection: "
+            onE e = STM.tryTakeTMVar' redisConR -- reset redis connection
+                 >> Log.warning logRes (F.format (str % F.shown) e)
+            withTimeout action =
+                 Stream.timeout (Time.Units.sec 1) action
+             >>= maybe (E.throw $ AppException "Timeout") return
+            process =
+                 withTimeout
+               $ STM.readTMVar' redisConR
+             >>= Poll.runRedis logRes
+        in Stream.mapM (const $ E.handleAny onE process)
+         . S.finally (Log.debug logRes "Stopped generating redis requests")
+         . untilShutdown runLevelR
+         . Stream.repeatM
+         $ produceRedisRequest
+    reconnectToRedis logRes runLevelR redisConR configR =
+        let connect config = E.handleAny handleRedisConnectError
+               $ Log.info logRes "Connect to redis database"
+              >> Redis.connect config
+             >>= STM.putTMVar' redisConR
+              >> Log.info logRes "Connection to redis database established"
+            handleRedisConnectError (e :: E.SomeException) =
+                  Log.warning logRes
+                $ F.format ("Exception while connecting to redis: " % F.shown) e
+            waitForConnectionReset =
+                  STM.atomically
+                $ STM.tryReadTMVar redisConR
+              >>= (`when` STM.retry) . isJust
+            getConfig =
+                    waitForConnectionReset
+                 >> Config.redisConnectInfo . Config.configRedis . fst
+                <$> STM.readTMVar' configR
+        in Stream.mapM connect
+         . S.finally (Log.debug logRes
+                                "Stopped checking redis connection")
+         . untilShutdown runLevelR
+         $ S.serial -- sanity delay between two connect attempts
+              (S.yieldM getConfig)
+              (Stream.repeatM $ Thread.delay (Time.Units.sec 1)
+                             >> getConfig)
+    greet logRes =
+          S.yieldM
+        . Log.info logRes
+        $ F.format
+            ("Startup version " % F.string)
+            (Version.showVersion Paths.version)
+    readCmdLineOptions logRes cmdlOptR =
+          S.yieldM
+        $ Log.info logRes "Parse command line"
+       >> CmdLine.parseCommandLineOptions
+      >>= STM.putTMVar' cmdlOptR
+    installSignalHandlers logRes runLevelR =
+        let handler signal = do
+                Log.info logRes $ F.format ("Caught signal " % F.shown)
+                                           signal
+                if signal `elem` terminateSignals
+                then Log.info logRes "Shutdown"
+                  >> STM.writeTVar' runLevelR Logging
+                else Log.info logRes
+                   $ F.format ("Signal " % F.shown % " ignored") signal
+        in S.yieldM
+         . mapM_ (Signal.installHandler (handler . PS.siginfoSignal))
+         $ PS.sigUSR1 : terminateSignals
+    readConfigFile logRes cmdlOptR configR = S.yieldM $ do
+        CmdLine.CommandLineOptions path <- STM.readTMVar' cmdlOptR
+        Log.info logRes $ F.format ("Open config file '" % F.string % "'")
+                                   path
+        handle <- Filesystem.openFile path Filesystem.ReadMode
+        Log.info logRes "Read config file"
+        content <- Filesystem.hGetContents handle
+        Log.info logRes "Parse config file"
+        config <- either (E.throwM . AppException . TL.pack) return
+                $ first show (TL.decodeUtf8' content)
+              >>= Config.parseIniFile . TL.toStrict
+        Log.info logRes
+          $ F.format ("Configuration:\n" % F.stext) (snd config)
+        STM.putTMVar' configR config
+    initLogging logRes configR logHandleR = S.yieldM $ do
+        Config.Log logDestination minLogLevel <-
+               Config.configLog . fst
+           <$> STM.readTMVar' configR
+        logHandle <- case logDestination of
+            Config.StdOut -> Filesystem.stdout
+            Config.File fp -> do
+                Log.info logRes $ F.format ("Open log file '" % F.string % "'") fp
+                Filesystem.openFile fp Filesystem.AppendMode
+        void . STM.atomically $
+               STM.swapTVar (Log.resourceMinLevelRelay logRes) minLogLevel
+            >> STM.swapTVar logHandleR logHandle
+    logging logRes runLevelR logHandleR =
+          let isLogging = \case
+                Log.Flush -> (< Stopped) <$> STM.readTVar' runLevelR
+                Log.Msg {} -> return True
+              msgStream = S.takeWhileM isLogging
+                        . Log.stream
+                        . Log.resourceMsgChan
+                        $ logRes
+              handleStream = Stream.repeatM
+                           . STM.readTVar'
+                           $ logHandleR
+          in S.zipWithM (flip Log.logger) msgStream handleStream
 
-    toStr :: TL.Text -> PS.SignalInfo -> TL.Text
-    toStr msg signalInfo =
-        let signal = PS.siginfoSignal signalInfo
-        in F.format ("Caught signal " % F.shown % ", " % F.text) signal msg
+-- list of signals on which we want to terminate, this conforms to the linux defaults,
+-- see http://man7.org/linux/man-pages/man7/signal.7.html
+-- exception is SIGPIPE, which we want to ignore
+terminateSignals :: [PS.Signal]
+terminateSignals = [PS.sigHUP, PS.sigINT, PS.sigALRM, PS.sigTERM]
 
-    termSignalHandler :: (Log.LogM m, Thread.ThreadM m) => C.ThreadId -> PS.SignalInfo -> m ()
-    termSignalHandler threadId signalInfo = do
-        Log.info $ toStr "terminate" signalInfo
-        Thread.throwTo threadId E.UserInterrupt
-
-    usr1SignalHandler :: Log.LogM m => PS.SignalInfo -> m ()
-    usr1SignalHandler = Log.info . toStr "ignore"

@@ -1,43 +1,51 @@
 module Tests.LogSpec (spec) where
 
-import qualified Effect.Log as Log
-import qualified Effect.Log.Impl.FastLogger as FastLogger
+import qualified Log
+import qualified Effect.Filesystem as Filesystem
+import           Effect.Filesystem.Impl ()
+import qualified Effect.Concurrent.STM as STM
+import           Effect.Concurrent.STM.Impl ()
+import           Effect.Concurrent.Thread.Impl ()
+import           Effect.Concurrent.Stream.Impl ()
+import           Effect.Time.Impl ()
 
-import           Control.Monad.Reader (ReaderT, ask, runReaderT)
-import           Control.Monad.Trans.Control (control)
 import qualified System.IO.Silently as Silently
+import qualified Streamly.Prelude as S
 import           Test.Hspec
-import qualified Test.Hspec.Expectations.Lifted as L
 
-type MyLogM = ReaderT FastLogger.Resource IO
-instance FastLogger.HasResource MyLogM where getResource = ask
+flush :: Log.Resource IO -> IO ()
+flush resource = do
+    logHandle <- Filesystem.stdout
+    S.drain . S.mapM (Log.logger logHandle)
+            . S.takeWhile (/= Log.Flush)
+            . Log.stream
+            . Log.resourceMsgChan
+            $ resource
 
-testInfo :: MyLogM ()
-testInfo
-     = control (\runInIO -> Silently.capture_ (   runInIO (Log.info "hi" 
-                                               >> FastLogger.flush)))
-   >>= (`L.shouldContain` "hi")
+testInfo :: Log.Resource IO -> IO ()
+testInfo resource
+     = Silently.capture_ (Log.info resource "hi" >> flush resource)
+   >>= (`shouldContain` "hi")
 
-testWarning :: MyLogM ()
-testWarning
-    = control (\runInIO -> Silently.capture_ (   runInIO (Log.warning "hi" 
-                                              >> FastLogger.flush)))
-  >>= (`L.shouldContain` "hi")
+testWarning :: Log.Resource IO -> IO ()
+testWarning resource
+    = Silently.capture_ (Log.warning resource "hi" >> flush resource)
+  >>= (`shouldContain` "hi")
 
-testDebug :: MyLogM ()
-testDebug
-    = control (\runInIO -> Silently.capture_ (   runInIO (Log.debug "hi" 
-                                              >> FastLogger.flush)))
-  >>= (`L.shouldBe` "")
+testDebug :: Log.Resource IO -> IO ()
+testDebug resource
+    = Silently.capture_ (Log.debug resource "hi" >> flush resource)
+  >>= (`shouldBe` "")
 
 spec :: Spec
 spec = context "Log" $
-    context "with FastLogger implementation" $ beforeAll buildFastLoggerRunner $ do
-        it "includes info messages" $ runReaderT testInfo
-        it "includes warning messages" $ runReaderT testWarning
-        it "excludes debug messages" $ runReaderT testDebug
+    context "with FastLogger implementation" $ beforeAll setup $ do
+        it "includes info messages" testInfo
+        it "includes warning messages" testWarning
+        it "excludes debug messages" testDebug
   where
-    buildFastLoggerRunner = do
-        env <- FastLogger.def
-        runReaderT (Log.init Log.Info Log.StdOut) env
-        return env
+    setup = do
+       msgRelay <- STM.newTChan'
+       minLevelRelay <- STM.newTVar' Log.Info
+       return $ Log.Resource msgRelay minLevelRelay
+

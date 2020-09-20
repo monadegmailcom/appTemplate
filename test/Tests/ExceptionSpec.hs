@@ -2,22 +2,21 @@
 
 module Tests.ExceptionSpec (spec) where
 
-import qualified Effect.Database as Database
+import qualified Effect.Redis as Redis
 
 import qualified Control.Exception.Safe as E
 import qualified Data.ByteString as BS
 import           Test.Hspec
 
 -- trivial synchronous exception throwing implementation
-instance Database.DatabaseM () IO where
+instance Redis.RedisM IO () where
     connect = undefined
-    getByKey _ = E.throwString "not yet implemented"
-    setByKey _ _ = return ()
+    runRedis _ _ = E.throwString "not yet implemented"
 
 -- catch exception in pure context
-getValue :: (E.MonadCatch m, Database.DatabaseM () m) => m (Either String BS.ByteString)
+getValue :: (E.MonadCatch m, Redis.RedisM m ()) => m (Either String BS.ByteString)
 getValue = E.catch
-    (maybe (Left "Not found") Right <$> Database.getByKey "hello")
+    (maybe (Left "Not found") Right <$> Redis.get () "hello")
     $ \(E.StringException msg _) -> return $ Left msg
 
 spec :: Spec

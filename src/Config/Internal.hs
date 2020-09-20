@@ -1,12 +1,13 @@
 {- | Internal implementation exported for unit tests. -}
 module Config.Internal
     ( Config(..)
+    , Destination(..)
     , Log(..)
     , Redis(..)
     , parseFromIni
     ) where
 
-import qualified Effect.Log as Log
+import qualified Log
 
 import           Data.Bifunctor (first)
 import qualified Data.CaseInsensitive as CI
@@ -20,6 +21,9 @@ import qualified Database.Redis as Redis
 import           Formatting ((%))
 import qualified Formatting as F
 
+-- | Log to stdout or file.
+data Destination = StdOut | File FilePath deriving (Eq, Show)
+
 -- | Global configuration.
 data Config = Config
     { configLog :: !Log
@@ -28,7 +32,7 @@ data Config = Config
 
 -- | Logging configuration.
 data Log = Log
-    { logFile :: !Log.Destination -- ^ log to stdout or file
+    { logFile :: !Destination -- ^ log to stdout or file
     , logLevel :: !Log.Level -- ^ filter messages with minimum level
     } deriving (Eq, Show)
 
@@ -56,7 +60,7 @@ parseFromIni :: Ini.Ini -> Either String Config
 parseFromIni ini = do
     logger <- do
         let section = "Log"
-            destination = maybe Log.StdOut Log.File (T.unpack <$> lookupOptional section "path")
+            destination = maybe StdOut File (T.unpack <$> lookupOptional section "path")
         level <- lookupMandatory section "level" >>= toLogLevel
         return $ Log destination level
     redis <- do
@@ -85,8 +89,11 @@ parseFromIni ini = do
     swap (a,b) = (b,a)
     -- translate case insensitive string to log level
     toLogLevel str =
-        let logLevels = map (first (CI.mk . TL.toStrict) . swap) Log.levels
-            levelsStr = TL.intercalate ", " . map snd $ Log.levels
+        let logLevels = map (first (CI.mk . TL.toStrict) . swap) levels
+            levelsStr = TL.intercalate ", " . map snd $ levels
+            levels = map (\level -> (level, TL.pack . show $ level))
+                         [Log.Debug .. Log.Error]
+
             errorMsg = TL.unpack $ F.format
                 ("Invalid log level '" % F.stext % "', choose one of " % F.text)
                 str

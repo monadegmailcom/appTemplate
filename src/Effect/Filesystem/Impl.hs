@@ -1,10 +1,19 @@
 {- | Implementation of filesystem effects. -}
-module Effect.Filesystem.Impl () where
+module Effect.Filesystem.Impl (Handle) where
 
 import           Effect.Filesystem
 
 import           Control.Monad.IO.Class (MonadIO, liftIO)
-import qualified Data.Text.Lazy.IO as TL
+import qualified Data.ByteString.Lazy as BL
+import qualified System.IO
 
-instance (Monad m, MonadIO m) => FilesystemM m where
-    readFile = liftIO . TL.readFile
+type Handle = System.IO.Handle
+
+instance (Monad m, MonadIO m) => FilesystemM m Handle where
+    openFile fp = liftIO . System.IO.openFile fp
+    hFlush = liftIO . System.IO.hFlush
+    hClose = liftIO . System.IO.hClose
+    hGetContents = liftIO . BL.hGetContents
+    hPutStr h = liftIO . BL.hPutStr h
+    stdout = return System.IO.stdout
+    stderr = return System.IO.stderr

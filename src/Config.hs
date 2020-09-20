@@ -1,6 +1,7 @@
 {- | Command line and config file parsing. -}
 module Config
     ( Config(..)
+    , Destination(..)
     , Log(..)
     , Redis(..)
     , parseIniFile
@@ -19,8 +20,9 @@ parseIniFile content = do
     config <- parseFromIni ini
     Right (config, Ini.printIni . redact $ ini)
   where
-    -- we do not want expose confidential information like passwords
-    redact ini = let adj = HashMap.adjust (HashMap.insert "auth" "<REDACTED>") "Redis" $ Ini.unIni ini
-                 in Ini.Ini (HashMap.map HashMap.toList adj) []
-
---(`Ini.Ini` []) . HashMap.adjust (HashMap.insert "auth" "<REDACTED>") "Redis" . Ini.unIni
+    -- we do not want to expose confidential information like passwords
+    redact ini =
+        let adj = HashMap.adjust (HashMap.insert "auth" "<REDACTED>")
+                                 "Redis"
+                $ Ini.unIni ini
+        in Ini.Ini (HashMap.map HashMap.toList adj) []
